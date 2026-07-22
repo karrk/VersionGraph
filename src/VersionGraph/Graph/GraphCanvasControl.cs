@@ -13,6 +13,7 @@ namespace VersionGraph.Graph;
 public sealed class GraphCanvasControl : FrameworkElement
 {
     private const double RowHeight = 28;
+    private const double BranchLineHeight = 16;
     private const double LaneWidth = 22;
     private const double NodeRadius = 5;
     private const double LeftPadding = 14;
@@ -52,7 +53,9 @@ public sealed class GraphCanvasControl : FrameworkElement
     {
         var graph = Graph;
         var width = LeftPadding + graph.LaneCount * LaneWidth + TextGap + TextWidth;
-        var height = graph.Commits.Count * RowHeight;
+        double height = 0;
+        foreach (var commit in graph.Commits)
+            height += RowHeightFor(commit);
         return new Size(width, height);
     }
 
@@ -66,18 +69,22 @@ public sealed class GraphCanvasControl : FrameworkElement
         for (var i = 0; i < graph.Commits.Count; i++)
             indexBySha[graph.Commits[i].Sha] = i;
 
+        // 브랜치가 있는 커밋은 2줄이라 행 높이가 다르므로, 고정 간격 대신
+        // 커밋마다 누적한 실제 중심 Y좌표를 미리 계산해 노드/엣지에 그대로 쓴다
+        var rowCenterY = ComputeRowCenters(graph);
+
         // 먼저 엣지(선)를 전부 그리고 그 위에 노드를 그려야 선이 노드에 가려지지 않는다
         for (var i = 0; i < graph.Commits.Count; i++)
         {
             var commit = graph.Commits[i];
-            var fromY = LaneCenterY(i);
+            var fromY = rowCenterY[i];
 
             foreach (var edge in commit.Edges)
             {
                 if (!indexBySha.TryGetValue(edge.ParentSha, out var parentIndex))
                     continue; // 히스토리 경계(shallow) 밖의 부모
 
-                var toY = LaneCenterY(parentIndex);
+                var toY = rowCenterY[parentIndex];
                 var fromX = LaneCenterX(edge.FromLane);
                 var toX = LaneCenterX(edge.ToLane);
                 var pen = new Pen(new SolidColorBrush(ColorFor(edge.ColorIndex)), 2);
@@ -107,7 +114,7 @@ public sealed class GraphCanvasControl : FrameworkElement
         {
             var commit = graph.Commits[i];
             var x = LaneCenterX(commit.Lane);
-            var y = LaneCenterY(i);
+            var y = rowCenterY[i];
             var brush = new SolidColorBrush(ColorFor(commit.ColorIndex));
 
             dc.DrawEllipse(brush, null, new Point(x, y), NodeRadius, NodeRadius);
@@ -117,24 +124,51 @@ public sealed class GraphCanvasControl : FrameworkElement
         }
     }
 
+    // 브랜치가 달린 커밋은 1번째 줄에 브랜치명, 2번째 줄에 커밋 내용을 나눠 그린다.
+    // 브랜치가 없으면 굳이 빈 줄을 만들지 않고 커밋 내용만 한 줄로 그린다.
     private void DrawRowText(DrawingContext dc, CommitNode commit, double x, double centerY)
     {
-        var refLabel = commit.RefLabels.Count > 0 ? $"[{string.Join(", ", commit.RefLabels)}] " : "";
-        var text = $"{refLabel}{commit.Message}  —  {commit.AuthorName}, {commit.ShortSha}";
+        var contentText = MakeFormattedText($"{commit.Message}  —  {commit.AuthorName}, {commit.ShortSha}");
 
-        var formatted = new FormattedText(
-            text, System.Globalization.CultureInfo.CurrentUICulture, FlowDirection.LeftToRight,
-            _typeface, 13, RowTextBrush, VisualTreeHelper.GetDpi(this).PixelsPerDip)
+        if (commit.RefLabels.Count == 0)
         {
-            MaxTextWidth = TextWidth,
-            MaxLineCount = 1,
-            Trimming = TextTrimming.CharacterEllipsis
-        };
+            dc.DrawText(contentText, new Point(x, centerY - contentText.Height / 2));
+            return;
+        }
 
-        dc.DrawText(formatted, new Point(x, centerY - formatted.Height / 2));
+        var branchText = MakeFormattedText($"[{string.Join(", ", commit.RefLabels)}]");
+        var top = centerY - (branchText.Height + contentText.Height) / 2;
+        dc.DrawText(branchText, new Point(x, top));
+        dc.DrawText(contentText, new Point(x, top + branchText.Height));
+    }
+
+    private FormattedText MakeFormattedText(string text) => new(
+        text, System.Globalization.CultureInfo.CurrentUICulture, FlowDirection.LeftToRight,
+        _typeface, 13, RowTextBrush, VisualTreeHelper.GetDpi(this).PixelsPerDip)
+    {
+        MaxTextWidth = TextWidth,
+        MaxLineCount = 1,
+        Trimming = TextTrimming.CharacterEllipsis
+    };
+
+    private static bool HasBranchLine(CommitNode commit) => commit.RefLabels.Count > 0;
+    private static double RowHeightFor(CommitNode commit) => HasBranchLine(commit) ? RowHeight + BranchLineHeight : RowHeight;
+
+    // 커밋마다 행 높이가 달라(브랜치 있으면 2줄) 고정 간격을 쓸 수 없어서
+    // 누적 Y를 미리 계산해두고 노드/엣지/텍스트가 전부 이 값을 공유해서 쓴다
+    private static double[] ComputeRowCenters(GraphModel graph)
+    {
+        var centers = new double[graph.Commits.Count];
+        var y = 0.0;
+        for (var i = 0; i < graph.Commits.Count; i++)
+        {
+            var height = RowHeightFor(graph.Commits[i]);
+            centers[i] = y + height / 2;
+            y += height;
+        }
+        return centers;
     }
 
     private static double LaneCenterX(int lane) => LeftPadding + lane * LaneWidth + LaneWidth / 2;
-    private static double LaneCenterY(int rowIndex) => rowIndex * RowHeight + RowHeight / 2;
     private static Color ColorFor(int colorIndex) => Palette[colorIndex % Palette.Length];
 }
