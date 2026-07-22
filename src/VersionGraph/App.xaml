@@ -31,7 +31,7 @@
         <DrawingBrush x:Key="ScanlineBrush" TileMode="Tile" Viewport="0,0,4,4" ViewportUnits="Absolute"
                       Viewbox="0,0,4,4" ViewboxUnits="Absolute">
             <DrawingBrush.Drawing>
-                <GeometryDrawing Brush="#73000000">
+                <GeometryDrawing Brush="#40000000">
                     <GeometryDrawing.Geometry>
                         <RectangleGeometry Rect="0,0,4,1"/>
                     </GeometryDrawing.Geometry>

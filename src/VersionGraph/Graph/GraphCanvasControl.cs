@@ -13,12 +13,12 @@ namespace VersionGraph.Graph;
 public sealed class GraphCanvasControl : FrameworkElement
 {
     private const double RowHeight = 28;
-    private const double BranchLineHeight = 16;
+    private const double BranchLineHeight = 20;
     private const double LaneWidth = 22;
     private const double NodeRadius = 5;
     private const double LeftPadding = 14;
     private const double TextGap = 12;
-    private const double TextWidth = 640;
+    private const double TextWidth = 800;
 
     // 어두운 배경 위에서도 또렷하게 보이도록 채도/명도를 높인 네온 팔레트
     private static readonly Color[] Palette =
@@ -47,7 +47,7 @@ public sealed class GraphCanvasControl : FrameworkElement
         set => SetValue(GraphProperty, value);
     }
 
-    private readonly Typeface _typeface = new("Segoe UI");
+    private readonly Typeface _typeface = new(new FontFamily("Segoe UI"), FontStyles.Normal, FontWeights.Bold, FontStretches.Normal);
 
     protected override Size MeasureOverride(Size availableSize)
     {
@@ -144,7 +144,7 @@ public sealed class GraphCanvasControl : FrameworkElement
 
     private FormattedText MakeFormattedText(string text) => new(
         text, System.Globalization.CultureInfo.CurrentUICulture, FlowDirection.LeftToRight,
-        _typeface, 13, RowTextBrush, VisualTreeHelper.GetDpi(this).PixelsPerDip)
+        _typeface, 16, RowTextBrush, VisualTreeHelper.GetDpi(this).PixelsPerDip)
     {
         MaxTextWidth = TextWidth,
         MaxLineCount = 1,
