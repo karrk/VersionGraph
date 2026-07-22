@@ -1,3 +1,4 @@
+using System.Linq;
 using System.Windows;
 using System.Windows.Media;
 using VersionGraph.Models;
@@ -29,7 +30,8 @@ public sealed class GraphCanvasControl : FrameworkElement
         Color.FromRgb(0xFF, 0x6E, 0x27), Color.FromRgb(0x4E, 0x9A, 0xE8)
     ];
 
-    private static readonly Brush RowTextBrush = FreezeBrush(new SolidColorBrush(Color.FromRgb(0xC9, 0xFF, 0xC9)));
+    // Palette와 1:1 대응하는 고정 브러시. 노드/엣지/텍스트가 전부 이 브러시를 공유해 브랜치별 색이 통일된다.
+    private static readonly Brush[] PaletteBrushes = Palette.Select(c => FreezeBrush(new SolidColorBrush(c))).ToArray();
 
     private static Brush FreezeBrush(Brush brush)
     {
@@ -87,7 +89,7 @@ public sealed class GraphCanvasControl : FrameworkElement
                 var toY = rowCenterY[parentIndex];
                 var fromX = LaneCenterX(edge.FromLane);
                 var toX = LaneCenterX(edge.ToLane);
-                var pen = new Pen(new SolidColorBrush(ColorFor(edge.ColorIndex)), 2);
+                var pen = new Pen(BrushFor(edge.ColorIndex), 2);
 
                 if (edge.FromLane == edge.ToLane)
                 {
@@ -115,7 +117,7 @@ public sealed class GraphCanvasControl : FrameworkElement
             var commit = graph.Commits[i];
             var x = LaneCenterX(commit.Lane);
             var y = rowCenterY[i];
-            var brush = new SolidColorBrush(ColorFor(commit.ColorIndex));
+            var brush = BrushFor(commit.ColorIndex);
 
             dc.DrawEllipse(brush, null, new Point(x, y), NodeRadius, NodeRadius);
 
@@ -128,7 +130,8 @@ public sealed class GraphCanvasControl : FrameworkElement
     // 브랜치가 없으면 굳이 빈 줄을 만들지 않고 커밋 내용만 한 줄로 그린다.
     private void DrawRowText(DrawingContext dc, CommitNode commit, double x, double centerY)
     {
-        var contentText = MakeFormattedText($"{commit.Message}  —  {commit.AuthorName}, {commit.ShortSha}");
+        var brush = BrushFor(commit.ColorIndex);
+        var contentText = MakeFormattedText(commit.Message, brush);
 
         if (commit.RefLabels.Count == 0)
         {
@@ -136,15 +139,15 @@ public sealed class GraphCanvasControl : FrameworkElement
             return;
         }
 
-        var branchText = MakeFormattedText($"[{string.Join(", ", commit.RefLabels)}]");
+        var branchText = MakeFormattedText($"[{string.Join(", ", commit.RefLabels)}]", brush);
         var top = centerY - (branchText.Height + contentText.Height) / 2;
         dc.DrawText(branchText, new Point(x, top));
         dc.DrawText(contentText, new Point(x, top + branchText.Height));
     }
 
-    private FormattedText MakeFormattedText(string text) => new(
+    private FormattedText MakeFormattedText(string text, Brush brush) => new(
         text, System.Globalization.CultureInfo.CurrentUICulture, FlowDirection.LeftToRight,
-        _typeface, 16, RowTextBrush, VisualTreeHelper.GetDpi(this).PixelsPerDip)
+        _typeface, 16, brush, VisualTreeHelper.GetDpi(this).PixelsPerDip)
     {
         MaxTextWidth = TextWidth,
         MaxLineCount = 1,
@@ -170,5 +173,5 @@ public sealed class GraphCanvasControl : FrameworkElement
     }
 
     private static double LaneCenterX(int lane) => LeftPadding + lane * LaneWidth + LaneWidth / 2;
-    private static Color ColorFor(int colorIndex) => Palette[colorIndex % Palette.Length];
+    private static Brush BrushFor(int colorIndex) => PaletteBrushes[colorIndex % PaletteBrushes.Length];
 }

@@ -25,10 +25,19 @@ public sealed partial class GraphViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     private string _statusText = "추적 중...";
 
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(FullScreenButtonText))]
+    private bool _isFullScreen;
+
+    public string FullScreenButtonText => IsFullScreen ? "EXIT FULL SCREEN" : "FULL SCREEN";
+
     public string RepoLabel { get; }
 
     /// <summary>"STOP TRACE" 버튼 클릭 시 발생. MainWindow가 구독해서 레포 선택 화면으로 전환한다.</summary>
     public event EventHandler? StopTraceRequested;
+
+    /// <summary>"FULL SCREEN" 버튼 클릭 시 발생. MainWindow가 구독해서 창 테두리를 없앤 전체화면을 토글한다.</summary>
+    public event EventHandler? FullScreenToggleRequested;
 
     public GraphViewModel(string owner, string name, string localPath, string token)
     {
@@ -52,6 +61,13 @@ public sealed partial class GraphViewModel : ObservableObject, IDisposable
 
     [RelayCommand]
     private void StopTrace() => StopTraceRequested?.Invoke(this, EventArgs.Empty);
+
+    [RelayCommand]
+    private void ToggleFullScreen()
+    {
+        IsFullScreen = !IsFullScreen;
+        FullScreenToggleRequested?.Invoke(this, EventArgs.Empty);
+    }
 
     private void RequestRefresh() => _dispatcher.Invoke(RefreshOnUiThread);
 

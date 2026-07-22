@@ -13,6 +13,7 @@
 
         <StackPanel Grid.Row="0" Margin="14,12,14,0">
             <DockPanel>
+                <Button Content="{Binding FullScreenButtonText}" Command="{Binding ToggleFullScreenCommand}" DockPanel.Dock="Right" Margin="12,0,0,0"/>
                 <Button Content="STOP TRACE" Command="{Binding StopTraceCommand}" DockPanel.Dock="Right" Margin="12,0,0,0"/>
                 <TextBlock Text="{Binding StatusText}" Style="{StaticResource DimText}" DockPanel.Dock="Right"/>
                 <StackPanel Orientation="Horizontal" DockPanel.Dock="Left">

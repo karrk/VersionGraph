@@ -88,8 +88,22 @@ public sealed class GitRepositoryService : IDisposable
             })
             .ToList();
 
-        var laneCount = GraphLayoutEngine.Assign(commits);
+        var laneCount = GraphLayoutEngine.Assign(commits, FindPrimaryTipSha());
         return new GraphModel { Commits = commits, LaneCount = laneCount };
+    }
+
+    // 트렁크 색상 고정의 기준이 되는 브랜치. 로컬 master/main이 없으면 origin의 것을 쓴다.
+    private string? FindPrimaryTipSha()
+    {
+        string[] candidates = ["master", "main", "origin/master", "origin/main"];
+        foreach (var name in candidates)
+        {
+            var branch = Repo.Branches[name];
+            if (branch?.Tip is not null)
+                return branch.Tip.Sha;
+        }
+
+        return null;
     }
 
     private Dictionary<string, List<string>> BuildRefLabels()
