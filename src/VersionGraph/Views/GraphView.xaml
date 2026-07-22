@@ -102,6 +102,14 @@
                                           CommitClickCommand="{Binding SelectCommitCommand}"/>
             </ScrollViewer>
 
+            <!-- 그래프 영역 가운데 워터마크: 스크롤과 무관하게 항상 중앙 고정.
+                 저투명도 + 히트테스트 제외로 커밋 클릭/스크롤을 방해하지 않고,
+                 픽셀 로고가 뭉개지지 않게 NearestNeighbor 스케일링 사용 -->
+            <Image Grid.Column="0" Panel.ZIndex="1" Source="pack://application:,,,/Assets/logo-watermark.png"
+                   MaxWidth="570" Opacity="0.08" IsHitTestVisible="False"
+                   HorizontalAlignment="Center" VerticalAlignment="Center"
+                   RenderOptions.BitmapScalingMode="NearestNeighbor"/>
+
             <!-- 커밋 상세 패널 (전체화면 + 커밋 선택 시에만 표시) -->
             <Border Grid.Column="1" Background="{StaticResource PanelBrush}"
                     BorderBrush="{StaticResource BorderBrush2}" BorderThickness="1,0,0,0"
