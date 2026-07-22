@@ -66,6 +66,17 @@ public sealed class GraphCanvasControl : FrameworkElement
     public static readonly DependencyProperty CommitClickCommandProperty = DependencyProperty.Register(
         nameof(CommitClickCommand), typeof(ICommand), typeof(GraphCanvasControl));
 
+    public static readonly DependencyProperty SelectedCommitShaProperty = DependencyProperty.Register(
+        nameof(SelectedCommitSha), typeof(string), typeof(GraphCanvasControl),
+        new FrameworkPropertyMetadata(null, FrameworkPropertyMetadataOptions.AffectsRender));
+
+    /// <summary>상세 패널에 표시 중인 커밋 SHA. 해당 행에 선택 하이라이트를 그린다.</summary>
+    public string? SelectedCommitSha
+    {
+        get => (string?)GetValue(SelectedCommitShaProperty);
+        set => SetValue(SelectedCommitShaProperty, value);
+    }
+
     /// <summary>커밋 행 클릭 시 해당 CommitNode를 파라미터로 실행되는 커맨드.</summary>
     public ICommand? CommitClickCommand
     {
@@ -99,6 +110,10 @@ public sealed class GraphCanvasControl : FrameworkElement
     // 호버 하이라이트용 반투명 브러시 (팔레트 0번 초록 톤과 맞춤)
     private static readonly Brush HoverBrush = FreezeBrush(new SolidColorBrush(Color.FromArgb(0x22, 0x39, 0xFF, 0x14)));
 
+    // 선택된 행: 호버보다 진한 배경 + 네온 그린 테두리로 "지금 보고 있는 커밋"을 명확히 구분
+    private static readonly Brush SelectedRowBrush = FreezeBrush(new SolidColorBrush(Color.FromArgb(0x3A, 0x39, 0xFF, 0x14)));
+    private static readonly Pen SelectedRowPen = FreezePen(new Pen(new SolidColorBrush(Color.FromArgb(0xAA, 0x39, 0xFF, 0x14)), 1));
+
     // 브랜치 라벨 박스: CRT 톤에 맞춘 녹색기 도는 회색조
     private static readonly Brush LabelBgBrush = FreezeBrush(new SolidColorBrush(Color.FromRgb(0x1C, 0x24, 0x1C)));
     private static readonly Brush LabelTextBrush = FreezeBrush(new SolidColorBrush(Color.FromRgb(0xB4, 0xC0, 0xB4)));
@@ -124,6 +139,20 @@ public sealed class GraphCanvasControl : FrameworkElement
             var top = RowTopY(graph, _hoverIndex);
             dc.DrawRectangle(HoverBrush, null,
                 new Rect(0, top, RenderSize.Width, RowHeightFor(graph.Commits[_hoverIndex])));
+        }
+
+        // 선택 중인 커밋 행 표시 (상세 패널과 연동)
+        if (SelectedCommitSha is not null)
+        {
+            for (var i = 0; i < graph.Commits.Count; i++)
+            {
+                if (graph.Commits[i].Sha != SelectedCommitSha)
+                    continue;
+                var top = RowTopY(graph, i);
+                dc.DrawRectangle(SelectedRowBrush, SelectedRowPen,
+                    new Rect(1, top + 1, RenderSize.Width - 2, RowHeightFor(graph.Commits[i]) - 2));
+                break;
+            }
         }
 
         var indexBySha = new Dictionary<string, int>(graph.Commits.Count);

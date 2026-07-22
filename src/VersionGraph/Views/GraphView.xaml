@@ -99,7 +99,8 @@
                 </ScrollViewer.Style>
                 <graph:GraphCanvasControl Graph="{Binding Graph}"
                                           IsInteractive="{Binding IsFullScreen}"
-                                          CommitClickCommand="{Binding SelectCommitCommand}"/>
+                                          CommitClickCommand="{Binding SelectCommitCommand}"
+                                          SelectedCommitSha="{Binding SelectedDetail.FullSha}"/>
             </ScrollViewer>
 
             <!-- 그래프 영역 가운데 워터마크: 스크롤과 무관하게 항상 중앙 고정.
