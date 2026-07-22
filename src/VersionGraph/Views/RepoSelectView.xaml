@@ -1,0 +1,32 @@
+<UserControl x:Class="VersionGraph.Views.RepoSelectView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d" d:DesignWidth="560" d:DesignHeight="420">
+    <Grid Margin="20">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <TextBlock Grid.Row="0" Text="추적할 레포지토리 선택" FontSize="20" FontWeight="Bold" Margin="0,0,0,12"/>
+
+        <ListBox Grid.Row="1" ItemsSource="{Binding Repos}" SelectedItem="{Binding SelectedRepo}"
+                  DisplayMemberPath="FullName" Height="220"/>
+
+        <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,12,0,0">
+            <TextBox Text="{Binding LocalPath, UpdateSourceTrigger=PropertyChanged}" Width="380" Height="28"/>
+            <Button Content="폴더 선택..." Command="{Binding BrowseFolderCommand}" Margin="8,0,0,0" Height="28"/>
+        </StackPanel>
+
+        <StackPanel Grid.Row="3" Margin="0,16,0,0">
+            <TextBlock Text="{Binding StatusMessage}" Foreground="IndianRed" TextWrapping="Wrap"
+                       Visibility="{Binding StatusMessage, Converter={StaticResource NullToCollapsedConverter}}"/>
+            <Button Content="추적 시작" Command="{Binding ConfirmCommand}" Height="34" Margin="0,8,0,0"
+                    IsEnabled="{Binding IsBusy, Converter={StaticResource InverseBoolConverter}}"/>
+        </StackPanel>
+    </Grid>
+</UserControl>
