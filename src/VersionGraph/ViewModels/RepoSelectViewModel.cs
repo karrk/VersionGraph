@@ -13,10 +13,10 @@ public sealed partial class RepoSelectViewModel : ObservableObject
     private readonly GitHubAuthService _authService;
     private readonly string _token;
 
-    public ObservableCollection<RepoSummary> Repos { get; } = [];
+    public ObservableCollection<RepoListItem> Repos { get; } = [];
 
     [ObservableProperty]
-    private RepoSummary? _selectedRepo;
+    private RepoListItem? _selectedRepo;
 
     [ObservableProperty]
     private string? _localPath;
@@ -41,13 +41,36 @@ public sealed partial class RepoSelectViewModel : ObservableObject
         IsBusy = true;
         StatusMessage = "레포지토리 목록을 불러오는 중...";
 
+        var config = AppConfigStore.Load();
         var repos = await _authService.ListReposAsync(_token);
         Repos.Clear();
         foreach (var repo in repos)
-            Repos.Add(repo);
+            Repos.Add(new RepoListItem(repo, config.GetRepoLocalPath(repo.Owner, repo.Name)));
 
         IsBusy = false;
         StatusMessage = null;
+    }
+
+    // 레포를 고르면 기록된 경로가 있는지 확인해서 자동으로 채운다.
+    // 기록된 경로가 실제로는 사라진 경우(폴더 삭제/이동) 그 기록은 무효화하고 사용자가 다시 지정하게 한다.
+    partial void OnSelectedRepoChanged(RepoListItem? value)
+    {
+        if (value?.StoredPath is not { } storedPath)
+        {
+            LocalPath = null;
+            return;
+        }
+
+        if (Directory.Exists(storedPath))
+        {
+            LocalPath = storedPath;
+            return;
+        }
+
+        AppConfigStore.Update(c => c.RemoveRepoLocalPath(value.Repo.Owner, value.Repo.Name));
+        value.StoredPath = null;
+        LocalPath = null;
+        StatusMessage = "이전에 등록된 경로를 찾을 수 없습니다. 폴더를 다시 지정해주세요.";
     }
 
     [RelayCommand]
@@ -73,6 +96,7 @@ public sealed partial class RepoSelectViewModel : ObservableObject
             return;
         }
 
+        var repo = SelectedRepo.Repo;
         IsBusy = true;
 
         try
@@ -88,15 +112,20 @@ public sealed partial class RepoSelectViewModel : ObservableObject
                 }
 
                 StatusMessage = "클론하는 중...";
-                await Task.Run(() => GitRepositoryService.Clone(SelectedRepo.CloneUrl, LocalPath, _token));
+                await Task.Run(() => GitRepositoryService.Clone(repo.CloneUrl, LocalPath, _token));
             }
-            else if (!GitRepositoryService.MatchesRemote(LocalPath, SelectedRepo.CloneUrl))
+            else if (!GitRepositoryService.MatchesRemote(LocalPath, repo.CloneUrl))
             {
+                // 기록된 경로를 자동으로 채웠는데 실제로는 다른 레포였던 경우 그 기록을 지워서
+                // 다음에 같은 잘못된 경로로 다시 유도되지 않게 한다.
+                AppConfigStore.Update(c => c.RemoveRepoLocalPath(repo.Owner, repo.Name));
+                SelectedRepo.StoredPath = null;
                 StatusMessage = "선택한 폴더는 다른 레포지토리의 클론입니다. 다른 폴더를 지정해주세요.";
                 return;
             }
 
-            RepoReady?.Invoke(this, (SelectedRepo.Owner, SelectedRepo.Name, LocalPath));
+            AppConfigStore.Update(c => c.SetRepoLocalPath(repo.Owner, repo.Name, LocalPath));
+            RepoReady?.Invoke(this, (repo.Owner, repo.Name, LocalPath));
         }
         catch (Exception ex)
         {
@@ -106,5 +135,20 @@ public sealed partial class RepoSelectViewModel : ObservableObject
         {
             IsBusy = false;
         }
+    }
+}
+
+/// <summary>레포 선택 목록의 한 행. 기록된 로컬 경로가 있으면 우측에 표시하기 위한 래퍼.</summary>
+public sealed partial class RepoListItem : ObservableObject
+{
+    public RepoSummary Repo { get; }
+
+    [ObservableProperty]
+    private string? _storedPath;
+
+    public RepoListItem(RepoSummary repo, string? storedPath)
+    {
+        Repo = repo;
+        StoredPath = storedPath;
     }
 }

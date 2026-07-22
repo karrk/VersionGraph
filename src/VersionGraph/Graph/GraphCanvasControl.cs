@@ -19,13 +19,22 @@ public sealed class GraphCanvasControl : FrameworkElement
     private const double TextGap = 12;
     private const double TextWidth = 640;
 
+    // 어두운 배경 위에서도 또렷하게 보이도록 채도/명도를 높인 네온 팔레트
     private static readonly Color[] Palette =
     [
-        Color.FromRgb(0x4E, 0x9A, 0xE8), Color.FromRgb(0xE0, 0x6C, 0x4E),
-        Color.FromRgb(0x5C, 0xB8, 0x5C), Color.FromRgb(0xC9, 0x7A, 0xE0),
-        Color.FromRgb(0xE0, 0xB8, 0x4E), Color.FromRgb(0x4E, 0xC9, 0xC0),
-        Color.FromRgb(0xD1, 0x5C, 0x8A), Color.FromRgb(0x8A, 0x9A, 0xE0)
+        Color.FromRgb(0x39, 0xFF, 0x14), Color.FromRgb(0x00, 0xE5, 0xFF),
+        Color.FromRgb(0xFF, 0x2E, 0x63), Color.FromRgb(0xFF, 0xC1, 0x07),
+        Color.FromRgb(0x7B, 0x61, 0xFF), Color.FromRgb(0x00, 0xFF, 0xA6),
+        Color.FromRgb(0xFF, 0x6E, 0x27), Color.FromRgb(0x4E, 0x9A, 0xE8)
     ];
+
+    private static readonly Brush RowTextBrush = FreezeBrush(new SolidColorBrush(Color.FromRgb(0xC9, 0xFF, 0xC9)));
+
+    private static Brush FreezeBrush(Brush brush)
+    {
+        brush.Freeze();
+        return brush;
+    }
 
     public static readonly DependencyProperty GraphProperty = DependencyProperty.Register(
         nameof(Graph), typeof(GraphModel), typeof(GraphCanvasControl),
@@ -115,7 +124,7 @@ public sealed class GraphCanvasControl : FrameworkElement
 
         var formatted = new FormattedText(
             text, System.Globalization.CultureInfo.CurrentUICulture, FlowDirection.LeftToRight,
-            _typeface, 13, Brushes.Black, VisualTreeHelper.GetDpi(this).PixelsPerDip)
+            _typeface, 13, RowTextBrush, VisualTreeHelper.GetDpi(this).PixelsPerDip)
         {
             MaxTextWidth = TextWidth,
             MaxLineCount = 1,

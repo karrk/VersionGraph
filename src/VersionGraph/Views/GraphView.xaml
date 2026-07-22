@@ -5,18 +5,26 @@
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:graph="clr-namespace:VersionGraph.Graph"
              mc:Ignorable="d" d:DesignWidth="900" d:DesignHeight="600">
-    <Grid>
+    <Grid Background="{StaticResource BgBrush}">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
 
-        <DockPanel Grid.Row="0" Margin="12,10,12,6">
-            <TextBlock Text="{Binding StatusText}" Opacity="0.7" DockPanel.Dock="Right"/>
-            <TextBlock Text="{Binding RepoLabel}" FontSize="16" FontWeight="Bold"/>
-        </DockPanel>
+        <StackPanel Grid.Row="0" Margin="14,12,14,0">
+            <DockPanel>
+                <Button Content="STOP TRACE" Command="{Binding StopTraceCommand}" DockPanel.Dock="Right" Margin="12,0,0,0"/>
+                <TextBlock Text="{Binding StatusText}" Style="{StaticResource DimText}" DockPanel.Dock="Right"/>
+                <StackPanel Orientation="Horizontal" DockPanel.Dock="Left">
+                    <TextBlock Text="&gt; " FontWeight="Bold" Foreground="{StaticResource AccentBrush}"/>
+                    <TextBlock Text="{Binding RepoLabel}" FontSize="15" FontWeight="Bold"/>
+                </StackPanel>
+            </DockPanel>
+            <Rectangle Style="{StaticResource SectionRule}" Margin="0,8,0,0"/>
+        </StackPanel>
 
-        <ScrollViewer Grid.Row="1" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
+        <ScrollViewer Grid.Row="1" Background="{StaticResource BgBrush}"
+                      HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
             <graph:GraphCanvasControl Graph="{Binding Graph}"/>
         </ScrollViewer>
     </Grid>

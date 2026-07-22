@@ -1,4 +1,4 @@
-﻿<Application x:Class="VersionGraph.App"
+<Application x:Class="VersionGraph.App"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:local="clr-namespace:VersionGraph"
@@ -7,5 +7,218 @@
         <views:NullToCollapsedConverter x:Key="NullToCollapsedConverter"/>
         <views:BoolToVisibleConverter x:Key="BoolToVisibleConverter"/>
         <views:InverseBoolConverter x:Key="InverseBoolConverter"/>
+
+        <!-- ===== 팔레트: 터미널/해킹 톤 다크 테마 ===== -->
+        <SolidColorBrush x:Key="BgBrush" Color="#0A0F0A"/>
+        <SolidColorBrush x:Key="PanelBrush" Color="#0E1510"/>
+        <SolidColorBrush x:Key="InputBrush" Color="#0C120C"/>
+        <SolidColorBrush x:Key="BorderBrush2" Color="#1E3B24"/>
+        <SolidColorBrush x:Key="AccentBrush" Color="#39FF14"/>
+        <SolidColorBrush x:Key="TextBrush" Color="#C9FFC9"/>
+        <SolidColorBrush x:Key="TextDimBrush" Color="#5C8F63"/>
+        <SolidColorBrush x:Key="ErrorBrush" Color="#FF4B4B"/>
+        <SolidColorBrush x:Key="HoverBrush" Color="#132318"/>
+        <SolidColorBrush x:Key="SelectedBrush" Color="#163A20"/>
+
+        <FontFamily x:Key="MonoFont">Cascadia Mono, Consolas, Courier New</FontFamily>
+
+        <!-- ===== CRT 오버레이: 옛날 모니터 느낌 (콘텐츠는 그대로, 위에 얹는 장식층만) ===== -->
+        <!-- 스캔라인: 4px 주기 중 1px만 어둡게 칠하는 얇은 줄(나머지 3px는 완전 투명).
+             줄이 두꺼우면(예전 2px) 글자 획 절반이 가려져 가독성이 떨어지므로,
+             실제 CRT처럼 '두꺼운 띠'가 아니라 '얇은 틈'으로 얇게 잡아 텍스트를 덜 가린다.
+             Viewbox를 명시하지 않으면 그려진 사각형 자체가 타일의 바운딩 박스가 되어
+             버려서 줄이 아니라 타일 전체가 늘어나 채워져 버리므로 4x4로 못박는다. -->
+        <DrawingBrush x:Key="ScanlineBrush" TileMode="Tile" Viewport="0,0,4,4" ViewportUnits="Absolute"
+                      Viewbox="0,0,4,4" ViewboxUnits="Absolute">
+            <DrawingBrush.Drawing>
+                <GeometryDrawing Brush="#73000000">
+                    <GeometryDrawing.Geometry>
+                        <RectangleGeometry Rect="0,0,4,1"/>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+            </DrawingBrush.Drawing>
+        </DrawingBrush>
+
+        <!-- 비네트: 중앙은 투명, 가장자리로 갈수록 검게 (볼록 왜곡 착시의 핵심 레이어) -->
+        <RadialGradientBrush x:Key="VignetteBrush" Center="0.5,0.5" GradientOrigin="0.5,0.5" RadiusX="0.65" RadiusY="0.65">
+            <GradientStop Color="#00000000" Offset="0.35"/>
+            <GradientStop Color="#80000000" Offset="1.0"/>
+        </RadialGradientBrush>
+
+        <!-- 유리 하이라이트: 브라운관 표면이 볼록하다는 착시를 주는 상단 반사광 -->
+        <LinearGradientBrush x:Key="GlassHighlightBrush" StartPoint="0.5,0" EndPoint="0.5,0.45">
+            <GradientStop Color="#0FFFFFFF" Offset="0.0"/>
+            <GradientStop Color="#00FFFFFF" Offset="1.0"/>
+        </LinearGradientBrush>
+
+        <!-- 신호 글리치: 화면 위를 스치는 얇은 색 번짐 줄. 평소엔 Opacity 0으로 숨어있다가
+             MainWindow에서 드물게 애니메이션으로 짧게 반짝인다 -->
+        <LinearGradientBrush x:Key="GlitchLineBrush" StartPoint="0,0.5" EndPoint="1,0.5">
+            <GradientStop Color="#00FFFFFF" Offset="0.0"/>
+            <GradientStop Color="#80E8FFEA" Offset="0.5"/>
+            <GradientStop Color="#00FFFFFF" Offset="1.0"/>
+        </LinearGradientBrush>
+
+        <!-- ===== 전역 스타일 ===== -->
+        <Style TargetType="Window">
+            <Setter Property="Background" Value="{StaticResource BgBrush}"/>
+            <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+            <Setter Property="FontFamily" Value="{StaticResource MonoFont}"/>
+            <Setter Property="FontSize" Value="13"/>
+        </Style>
+
+        <Style TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+        </Style>
+
+        <!-- 화면 제목: "> " 프롬프트 느낌의 강조 헤딩 -->
+        <Style x:Key="HeadingText" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{StaticResource AccentBrush}"/>
+            <Setter Property="FontWeight" Value="Bold"/>
+            <Setter Property="FontSize" Value="17"/>
+        </Style>
+
+        <Style x:Key="DimText" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{StaticResource TextDimBrush}"/>
+        </Style>
+
+        <Style x:Key="SectionRule" TargetType="Rectangle">
+            <Setter Property="Height" Value="1"/>
+            <Setter Property="Fill" Value="{StaticResource BorderBrush2}"/>
+        </Style>
+
+        <!-- 버튼: 각진 테두리 + 호버 시 네온 그린 강조 (라운드/시스템 강조색 없는 플랫 터미널 룩) -->
+        <Style TargetType="Button">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Foreground" Value="{StaticResource AccentBrush}"/>
+            <Setter Property="BorderBrush" Value="{StaticResource BorderBrush2}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="FontFamily" Value="{StaticResource MonoFont}"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Padding" Value="10,4"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bd" Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}">
+                            <ContentPresenter Margin="{TemplateBinding Padding}"
+                                               HorizontalAlignment="Center" VerticalAlignment="Center"
+                                               RecognizesAccessKey="True"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="{StaticResource HoverBrush}"/>
+                                <Setter TargetName="Bd" Property="BorderBrush" Value="{StaticResource AccentBrush}"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="{StaticResource SelectedBrush}"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Foreground" Value="{StaticResource TextDimBrush}"/>
+                                <Setter TargetName="Bd" Property="Opacity" Value="0.5"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style TargetType="TextBox">
+            <Setter Property="Background" Value="{StaticResource InputBrush}"/>
+            <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+            <Setter Property="CaretBrush" Value="{StaticResource AccentBrush}"/>
+            <Setter Property="SelectionBrush" Value="{StaticResource SelectedBrush}"/>
+            <Setter Property="BorderBrush" Value="{StaticResource BorderBrush2}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding" Value="6,4"/>
+            <Setter Property="FontFamily" Value="{StaticResource MonoFont}"/>
+            <Style.Triggers>
+                <Trigger Property="IsKeyboardFocused" Value="True">
+                    <Setter Property="BorderBrush" Value="{StaticResource AccentBrush}"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style TargetType="ListBox">
+            <Setter Property="Background" Value="{StaticResource PanelBrush}"/>
+            <Setter Property="BorderBrush" Value="{StaticResource BorderBrush2}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+            <Setter Property="FontFamily" Value="{StaticResource MonoFont}"/>
+            <Setter Property="Padding" Value="2"/>
+        </Style>
+
+        <!-- 리스트 항목: 시스템 파란색 선택 강조 대신 네온 그린 라인 -->
+        <Style TargetType="ListBoxItem">
+            <Setter Property="Padding" Value="8,5"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ListBoxItem">
+                        <Border x:Name="Bd" Background="Transparent" Padding="{TemplateBinding Padding}"
+                                BorderThickness="0,0,0,1" BorderBrush="#101A12">
+                            <ContentPresenter/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="{StaticResource HoverBrush}"/>
+                            </Trigger>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="{StaticResource SelectedBrush}"/>
+                                <Setter Property="Foreground" Value="{StaticResource AccentBrush}"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- 스크롤바: 얇은 그린 트랙 (그래프가 커밋 수천 개까지 늘어나므로 GraphView에서 실사용) -->
+        <Style x:Key="TerminalScrollThumb" TargetType="Thumb">
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Thumb">
+                        <Border Background="{StaticResource BorderBrush2}" Margin="2"/>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style TargetType="ScrollBar">
+            <Setter Property="Background" Value="{StaticResource BgBrush}"/>
+            <Setter Property="Width" Value="10"/>
+            <Setter Property="MinWidth" Value="10"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ScrollBar">
+                        <Grid Background="{TemplateBinding Background}">
+                            <Track x:Name="PART_Track" IsDirectionReversed="True">
+                                <Track.Thumb>
+                                    <Thumb Style="{StaticResource TerminalScrollThumb}"/>
+                                </Track.Thumb>
+                                <Track.DecreaseRepeatButton>
+                                    <RepeatButton Command="ScrollBar.PageUpCommand" Opacity="0" Focusable="False"/>
+                                </Track.DecreaseRepeatButton>
+                                <Track.IncreaseRepeatButton>
+                                    <RepeatButton Command="ScrollBar.PageDownCommand" Opacity="0" Focusable="False"/>
+                                </Track.IncreaseRepeatButton>
+                            </Track>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="Orientation" Value="Horizontal">
+                                <Setter TargetName="PART_Track" Property="IsDirectionReversed" Value="False"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Style.Triggers>
+                <Trigger Property="Orientation" Value="Horizontal">
+                    <Setter Property="Width" Value="Auto"/>
+                    <Setter Property="Height" Value="10"/>
+                    <Setter Property="MinWidth" Value="0"/>
+                    <Setter Property="MinHeight" Value="10"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
     </Application.Resources>
 </Application>

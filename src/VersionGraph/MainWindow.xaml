@@ -7,5 +7,28 @@
         Title="VersionGraph" Height="640" Width="960"
         StateChanged="MainWindow_StateChanged"
         Closing="MainWindow_Closing">
-    <Grid x:Name="RootContent"/>
+    <!-- 바깥 사각 배경: 라운드 베젤이 코너를 잘라내고 남는 자투리 영역이
+         창의 기본 흰색 백드롭 대신 이 검은 배경을 보이게 하는 뒷판 -->
+    <Grid Background="Black">
+        <!-- 베젤: 브라운관 테두리처럼 콘텐츠 바깥을 감싸는 검은 틀 -->
+        <Border Background="Black" CornerRadius="18" Padding="10">
+            <Grid x:Name="ScreenArea" SizeChanged="ScreenArea_SizeChanged">
+                <Grid x:Name="RootContent" Background="{StaticResource BgBrush}"/>
+
+                <!-- 아래 레이어들은 장식만 하는 오버레이라 클릭을 콘텐츠로 그대로 흘려보낸다 -->
+                <Rectangle Fill="{StaticResource ScanlineBrush}" IsHitTestVisible="False"
+                           RenderOptions.EdgeMode="Aliased"/>
+                <Rectangle Fill="{StaticResource GlassHighlightBrush}" IsHitTestVisible="False"/>
+                <Rectangle Fill="{StaticResource VignetteBrush}" IsHitTestVisible="False"/>
+
+                <!-- 신호 글리치 줄: 평소 Opacity=0으로 숨어있다가 코드비하인드가 드물게 반짝인다 -->
+                <Rectangle x:Name="GlitchLine" Fill="{StaticResource GlitchLineBrush}" Height="3"
+                           VerticalAlignment="Top" Opacity="0" IsHitTestVisible="False">
+                    <Rectangle.RenderTransform>
+                        <TranslateTransform x:Name="GlitchTransform"/>
+                    </Rectangle.RenderTransform>
+                </Rectangle>
+            </Grid>
+        </Border>
+    </Grid>
 </Window>

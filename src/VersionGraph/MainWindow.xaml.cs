@@ -1,6 +1,11 @@
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Interop;
+using System.Windows.Media;
+using System.Windows.Media.Animation;
+using System.Windows.Threading;
 using VersionGraph.Models;
 using VersionGraph.Services;
 using VersionGraph.ViewModels;
@@ -17,6 +22,8 @@ namespace VersionGraph;
 public partial class MainWindow : Window
 {
     private readonly GitHubAuthService _authService = new();
+    private readonly DispatcherTimer _glitchTimer = new();
+    private readonly Random _glitchRandom = new();
     private Forms.NotifyIcon? _notifyIcon;
     private GraphViewModel? _graphViewModel;
 
@@ -24,7 +31,44 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         SetupTrayIcon();
+        SourceInitialized += (_, _) => ApplyNativeChromeTweaks();
         Loaded += async (_, _) => await StartAsync();
+        Loaded += (_, _) => StartGlitchEffect();
+    }
+
+    [DllImport("dwmapi.dll", PreserveSig = true)]
+    private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attribute, ref int value, int size);
+
+    private const int DwmwaUseImmersiveDarkMode = 20;
+    private const int DwmwaWindowCornerPreference = 33;
+    private const int DwmwcpDoNotRound = 1;
+
+    // 네이티브 타이틀바 다크 모드 + 창 자체 라운드 코너 끄기.
+    // Windows 11은 최상위 창 모서리를 자체적으로 둥글리는데, 이게 우리 CRT 베젤의
+    // 라운드 코너와 이중으로 겹치면서 모서리에 흰 이음새가 생겨 여기서 꺼버린다.
+    private void ApplyNativeChromeTweaks()
+    {
+        var hwnd = new WindowInteropHelper(this).Handle;
+        var useDark = 1;
+        DwmSetWindowAttribute(hwnd, DwmwaUseImmersiveDarkMode, ref useDark, sizeof(int));
+
+        var doNotRound = DwmwcpDoNotRound;
+        DwmSetWindowAttribute(hwnd, DwmwaWindowCornerPreference, ref doNotRound, sizeof(int));
+    }
+
+    // 신호 글리치: 화면 임의 위치에 얇은 색 번짐 줄을 짧게 반짝였다가 다음 번은
+    // 또 다른 무작위 간격으로 예약해 규칙적이지 않은 CRT 잡신호 느낌을 낸다
+    private void StartGlitchEffect()
+    {
+        _glitchTimer.Tick += (_, _) =>
+        {
+            GlitchTransform.Y = _glitchRandom.NextDouble() * ScreenArea.ActualHeight;
+            var flash = new DoubleAnimation(0, 0.22, TimeSpan.FromMilliseconds(70)) { AutoReverse = true };
+            GlitchLine.BeginAnimation(OpacityProperty, flash);
+            _glitchTimer.Interval = TimeSpan.FromSeconds(_glitchRandom.Next(6, 14));
+        };
+        _glitchTimer.Interval = TimeSpan.FromSeconds(_glitchRandom.Next(6, 14));
+        _glitchTimer.Start();
     }
 
     private void SetupTrayIcon()
@@ -46,6 +90,13 @@ public partial class MainWindow : Window
         _notifyIcon.DoubleClick += (_, _) => RestoreWindow();
     }
 
+    // Clip은 크기를 자동으로 따라오지 않아 SizeChanged마다 다시 그려줘야
+    // 창을 리사이즈해도 CRT 화면의 둥근 모서리가 유지된다
+    private void ScreenArea_SizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        ScreenArea.Clip = new RectangleGeometry(new Rect(e.NewSize), 14, 14);
+    }
+
     private void RestoreWindow()
     {
         Show();
@@ -63,6 +114,7 @@ public partial class MainWindow : Window
     private void MainWindow_Closing(object? sender, System.ComponentModel.CancelEventArgs e)
     {
         // 창 닫기(X) 또는 트레이 "종료" = 추적 중지 지점
+        _glitchTimer.Stop();
         _graphViewModel?.Dispose();
         _notifyIcon?.Dispose();
     }
@@ -123,7 +175,12 @@ public partial class MainWindow : Window
         var vm = new RepoSelectViewModel(_authService, token);
         vm.RepoReady += (_, e) =>
         {
-            AppConfigStore.Save(new AppConfig { RepoOwner = e.Owner, RepoName = e.Name, LocalPath = e.LocalPath });
+            AppConfigStore.Update(c =>
+            {
+                c.RepoOwner = e.Owner;
+                c.RepoName = e.Name;
+                c.LocalPath = e.LocalPath;
+            });
             StartGraph(e.Owner, e.Name, e.LocalPath, token);
         };
 
@@ -135,7 +192,17 @@ public partial class MainWindow : Window
     {
         _graphViewModel?.Dispose();
         _graphViewModel = new GraphViewModel(owner, name, localPath, token);
+        _graphViewModel.StopTraceRequested += async (_, _) => await OnStopTraceAsync(token);
         ShowContent(new GraphView { DataContext = _graphViewModel });
+    }
+
+    private async Task OnStopTraceAsync(string token)
+    {
+        // 추적 중지 = 저장된 레포 설정도 함께 비워야 다음 재시작 때 이 레포로 자동 진입하지 않는다
+        _graphViewModel?.Dispose();
+        _graphViewModel = null;
+        AppConfigStore.ClearActiveRepo();
+        await ShowRepoSelectAsync(token);
     }
 
     private void ShowContent(UIElement element)

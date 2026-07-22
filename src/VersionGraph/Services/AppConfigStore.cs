@@ -34,4 +34,21 @@ public static class AppConfigStore
         var json = JsonSerializer.Serialize(config, new JsonSerializerOptions { WriteIndented = true });
         File.WriteAllText(FilePath, json);
     }
+
+    /// <summary>Load → 수정 → Save를 한 번에 해서, 다른 필드(예: 레포별 경로 기록)를 덮어쓰지 않게 한다.</summary>
+    public static void Update(Action<AppConfig> mutate)
+    {
+        var config = Load();
+        mutate(config);
+        Save(config);
+    }
+
+    /// <summary>추적 중지 시 "마지막 접속 레포" 정보만 비운다. 레포별 경로 기록(RepoLocalPaths)은 유지.</summary>
+    public static void ClearActiveRepo() =>
+        Update(config =>
+        {
+            config.RepoOwner = null;
+            config.RepoName = null;
+            config.LocalPath = null;
+        });
 }

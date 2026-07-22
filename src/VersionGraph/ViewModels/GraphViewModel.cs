@@ -1,5 +1,6 @@
 using System.Windows.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
 using VersionGraph.Models;
 using VersionGraph.Services;
 
@@ -26,6 +27,9 @@ public sealed partial class GraphViewModel : ObservableObject, IDisposable
 
     public string RepoLabel { get; }
 
+    /// <summary>"STOP TRACE" 버튼 클릭 시 발생. MainWindow가 구독해서 레포 선택 화면으로 전환한다.</summary>
+    public event EventHandler? StopTraceRequested;
+
     public GraphViewModel(string owner, string name, string localPath, string token)
     {
         RepoLabel = $"{owner}/{name}";
@@ -45,6 +49,9 @@ public sealed partial class GraphViewModel : ObservableObject, IDisposable
         RequestRefresh();
         _poller.Start();
     }
+
+    [RelayCommand]
+    private void StopTrace() => StopTraceRequested?.Invoke(this, EventArgs.Empty);
 
     private void RequestRefresh() => _dispatcher.Invoke(RefreshOnUiThread);
 

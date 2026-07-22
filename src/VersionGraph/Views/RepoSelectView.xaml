@@ -4,7 +4,7 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              mc:Ignorable="d" d:DesignWidth="560" d:DesignHeight="420">
-    <Grid Margin="20">
+    <Grid Margin="24" Background="{StaticResource BgBrush}">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
@@ -12,20 +12,37 @@
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <TextBlock Grid.Row="0" Text="추적할 레포지토리 선택" FontSize="20" FontWeight="Bold" Margin="0,0,0,12"/>
+        <StackPanel Grid.Row="0" Margin="0,0,0,14">
+            <TextBlock Text="&gt; SELECT REPOSITORY" Style="{StaticResource HeadingText}"/>
+            <Rectangle Style="{StaticResource SectionRule}" Margin="0,10,0,0"/>
+        </StackPanel>
 
-        <ListBox Grid.Row="1" ItemsSource="{Binding Repos}" SelectedItem="{Binding SelectedRepo}"
-                  DisplayMemberPath="FullName" Height="220"/>
+        <ListBox Grid.Row="1" ItemsSource="{Binding Repos}" SelectedItem="{Binding SelectedRepo}" Height="220">
+            <ListBox.ItemTemplate>
+                <DataTemplate>
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="{Binding Repo.FullName}"/>
+                        <TextBlock Grid.Column="1" Text="{Binding StoredPath}" Style="{StaticResource DimText}"
+                                   Margin="16,0,0,0" TextTrimming="CharacterEllipsis" MaxWidth="220"
+                                   Visibility="{Binding StoredPath, Converter={StaticResource NullToCollapsedConverter}}"/>
+                    </Grid>
+                </DataTemplate>
+            </ListBox.ItemTemplate>
+        </ListBox>
 
-        <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,12,0,0">
+        <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,14,0,0">
             <TextBox Text="{Binding LocalPath, UpdateSourceTrigger=PropertyChanged}" Width="380" Height="28"/>
-            <Button Content="폴더 선택..." Command="{Binding BrowseFolderCommand}" Margin="8,0,0,0" Height="28"/>
+            <Button Content="BROWSE..." Command="{Binding BrowseFolderCommand}" Margin="8,0,0,0" Height="28"/>
         </StackPanel>
 
         <StackPanel Grid.Row="3" Margin="0,16,0,0">
-            <TextBlock Text="{Binding StatusMessage}" Foreground="IndianRed" TextWrapping="Wrap"
+            <TextBlock Text="{Binding StatusMessage}" Foreground="{StaticResource ErrorBrush}" TextWrapping="Wrap"
                        Visibility="{Binding StatusMessage, Converter={StaticResource NullToCollapsedConverter}}"/>
-            <Button Content="추적 시작" Command="{Binding ConfirmCommand}" Height="34" Margin="0,8,0,0"
+            <Button Content="START TRACKING" Command="{Binding ConfirmCommand}" Height="34" Margin="0,8,0,0"
                     IsEnabled="{Binding IsBusy, Converter={StaticResource InverseBoolConverter}}"/>
         </StackPanel>
     </Grid>
