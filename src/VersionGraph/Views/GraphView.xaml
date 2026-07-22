@@ -5,6 +5,48 @@
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:graph="clr-namespace:VersionGraph.Graph"
              mc:Ignorable="d" d:DesignWidth="900" d:DesignHeight="600">
+    <UserControl.Resources>
+        <!-- 파일 diff 접기/펼치기 헤더: 전역 Button 스타일은 Button 전용이라 ToggleButton용을 따로 정의 -->
+        <Style x:Key="FileToggleStyle" TargetType="ToggleButton">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ToggleButton">
+                        <Border x:Name="Bd" Background="{TemplateBinding Background}" Padding="4,3">
+                            <ContentPresenter/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="{StaticResource HoverBrush}"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- diff 라인: 종류별 배경/전경. 추가=저알파 네온그린, 삭제=저알파 빨강 (CRT 팔레트 톤 유지) -->
+        <Style x:Key="DiffLineText" TargetType="TextBlock">
+            <Setter Property="FontFamily" Value="{StaticResource MonoFont}"/>
+            <Setter Property="FontSize" Value="14"/>
+            <Setter Property="Padding" Value="8,3"/>
+            <!-- x:Key 있는 스타일은 전역 암시적 TextBlock 스타일을 대체하므로 전경색을 직접 지정해야 검은 글자가 안 됨 -->
+            <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding Kind}" Value="Added">
+                    <Setter Property="Background" Value="#1A39FF14"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Kind}" Value="Removed">
+                    <Setter Property="Background" Value="#26FF4B4B"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Kind}" Value="Header">
+                    <Setter Property="Foreground" Value="{StaticResource TextDimBrush}"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+    </UserControl.Resources>
     <Grid Background="{StaticResource BgBrush}">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
@@ -24,9 +66,120 @@
             <Rectangle Style="{StaticResource SectionRule}" Margin="0,8,0,0"/>
         </StackPanel>
 
-        <ScrollViewer Grid.Row="1" Background="{StaticResource BgBrush}"
-                      HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
-            <graph:GraphCanvasControl Graph="{Binding Graph}"/>
-        </ScrollViewer>
+        <Grid Grid.Row="1">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="6*"/>
+                <!-- 상세 패널 컬럼: 닫혀 있으면 폭 0으로 공간을 아예 차지하지 않음 -->
+                <ColumnDefinition>
+                    <ColumnDefinition.Style>
+                        <Style TargetType="ColumnDefinition">
+                            <Setter Property="Width" Value="0"/>
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsDetailVisible}" Value="True">
+                                    <Setter Property="Width" Value="4*"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </ColumnDefinition.Style>
+                </ColumnDefinition>
+            </Grid.ColumnDefinitions>
+
+            <ScrollViewer Grid.Column="0" Background="{StaticResource BgBrush}"
+                          HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
+                <!-- 전체화면에선 화면 끝에 붙지 않도록 상/좌/하 여백 추가, 종료 시 원복 -->
+                <ScrollViewer.Style>
+                    <Style TargetType="ScrollViewer">
+                        <Setter Property="Margin" Value="0"/>
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding IsFullScreen}" Value="True">
+                                <Setter Property="Margin" Value="32,24,0,24"/>
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </ScrollViewer.Style>
+                <graph:GraphCanvasControl Graph="{Binding Graph}"
+                                          IsInteractive="{Binding IsFullScreen}"
+                                          CommitClickCommand="{Binding SelectCommitCommand}"/>
+            </ScrollViewer>
+
+            <!-- 커밋 상세 패널 (전체화면 + 커밋 선택 시에만 표시) -->
+            <Border Grid.Column="1" Background="{StaticResource PanelBrush}"
+                    BorderBrush="{StaticResource BorderBrush2}" BorderThickness="1,0,0,0"
+                    Visibility="{Binding IsDetailVisible, Converter={StaticResource BoolToVisibleConverter}}">
+                <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
+                    <!-- 기본 13(Window 상속)보다 2 크게. 명시 크기가 없는 하위 텍스트 전부에 상속됨 -->
+                    <StackPanel Margin="14,12" DataContext="{Binding SelectedDetail}" TextElement.FontSize="15">
+
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="&gt; " Style="{StaticResource HeadingText}"/>
+                            <TextBlock Text="{Binding ShortSha}" Style="{StaticResource HeadingText}"/>
+                        </StackPanel>
+                        <TextBlock Text="{Binding RefLabelsText}" Foreground="{StaticResource AccentBrush}" Margin="0,4,0,0"
+                                   Visibility="{Binding HasRefLabels, Converter={StaticResource BoolToVisibleConverter}}"/>
+                        <Rectangle Style="{StaticResource SectionRule}" Margin="0,8,0,8"/>
+
+                        <TextBlock Text="AUTHOR" Style="{StaticResource DimText}"/>
+                        <StackPanel Orientation="Horizontal" Margin="0,2,0,0">
+                            <TextBlock Text="{Binding AuthorName}"/>
+                            <TextBlock Text=" &lt;"/>
+                            <TextBlock Text="{Binding AuthorEmail}"/>
+                            <TextBlock Text="&gt;"/>
+                        </StackPanel>
+                        <TextBlock Text="{Binding When, StringFormat='yyyy-MM-dd HH:mm:ss zzz'}" Style="{StaticResource DimText}" Margin="0,2,0,0"/>
+
+                        <TextBlock Text="SHA" Style="{StaticResource DimText}" Margin="0,10,0,0"/>
+                        <TextBox Text="{Binding FullSha, Mode=OneWay}" IsReadOnly="True" BorderThickness="0"
+                                 Background="Transparent" Padding="0" Margin="0,2,0,0"/>
+
+                        <TextBlock Text="PARENTS" Style="{StaticResource DimText}" Margin="0,10,0,0"/>
+                        <TextBlock Text="{Binding ParentShasText}" Margin="0,2,0,0"/>
+
+                        <Rectangle Style="{StaticResource SectionRule}" Margin="0,10,0,8"/>
+
+                        <TextBlock Text="MESSAGE" Style="{StaticResource DimText}"/>
+                        <TextBlock Text="{Binding FullMessage}" TextWrapping="Wrap" Margin="0,4,0,0"/>
+
+                        <Rectangle Style="{StaticResource SectionRule}" Margin="0,10,0,8"/>
+
+                        <TextBlock Text="FILES" Style="{StaticResource DimText}"/>
+                        <ItemsControl ItemsSource="{Binding Files}" Margin="0,4,0,0">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <StackPanel Margin="0,0,0,8">
+                                        <ToggleButton x:Name="FileToggle" Style="{StaticResource FileToggleStyle}">
+                                            <DockPanel>
+                                                <TextBlock x:Name="Arrow" Text="▸" Foreground="{StaticResource AccentBrush}"
+                                                           DockPanel.Dock="Left" Margin="0,0,6,0"/>
+                                                <TextBlock Text="{Binding StatsText}" Style="{StaticResource DimText}"
+                                                           DockPanel.Dock="Right" Margin="8,0,0,0"/>
+                                                <TextBlock Text="{Binding Path}" Foreground="{StaticResource AccentBrush}"
+                                                           FontWeight="Bold" TextTrimming="CharacterEllipsis"/>
+                                            </DockPanel>
+                                        </ToggleButton>
+                                        <Border Background="{StaticResource InputBrush}"
+                                                BorderBrush="{StaticResource BorderBrush2}" BorderThickness="1" Padding="0,6"
+                                                Visibility="{Binding IsChecked, ElementName=FileToggle, Converter={StaticResource BoolToVisibleConverter}}">
+                                            <ItemsControl ItemsSource="{Binding Lines}">
+                                                <ItemsControl.ItemTemplate>
+                                                    <DataTemplate>
+                                                        <TextBlock Text="{Binding Text}" Style="{StaticResource DiffLineText}"/>
+                                                    </DataTemplate>
+                                                </ItemsControl.ItemTemplate>
+                                            </ItemsControl>
+                                        </Border>
+                                    </StackPanel>
+                                    <DataTemplate.Triggers>
+                                        <DataTrigger Binding="{Binding IsChecked, ElementName=FileToggle}" Value="True">
+                                            <Setter TargetName="Arrow" Property="Text" Value="▾"/>
+                                        </DataTrigger>
+                                    </DataTemplate.Triggers>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+
+                    </StackPanel>
+                </ScrollViewer>
+            </Border>
+        </Grid>
     </Grid>
 </UserControl>

@@ -106,6 +106,58 @@ public sealed class GitRepositoryService : IDisposable
         return null;
     }
 
+    /// <summary>커밋 하나의 상세 정보(메타데이터 + 첫 부모 기준 diff)를 만든다. diff 계산이 무거울 수 있어 백그라운드 호출 권장.</summary>
+    public CommitDetail GetCommitDetail(string sha)
+    {
+        var commit = Repo.Lookup<Commit>(sha) ?? throw new ArgumentException($"커밋을 찾을 수 없음: {sha}");
+        var refLabelsBySha = BuildRefLabels();
+
+        // 머지 커밋도 git show 기본 동작처럼 첫 부모 기준으로 비교. 루트 커밋은 빈 트리(null)와 비교
+        var parentTree = commit.Parents.FirstOrDefault()?.Tree;
+        var patch = Repo.Diff.Compare<Patch>(parentTree, commit.Tree);
+
+        var files = patch
+            .Select(p => new CommitFileChange(
+                p.Path,
+                p.Status.ToString(),
+                p.LinesAdded,
+                p.LinesDeleted,
+                ParseDiffLines(p.Patch)))
+            .ToList();
+
+        return new CommitDetail
+        {
+            FullSha = commit.Sha,
+            ShortSha = commit.Sha[..7],
+            AuthorName = commit.Author.Name,
+            AuthorEmail = commit.Author.Email,
+            When = commit.Author.When,
+            FullMessage = commit.Message.TrimEnd(),
+            RefLabels = refLabelsBySha.TryGetValue(commit.Sha, out var labels) ? labels : [],
+            ParentShas = commit.Parents.Select(p => p.Sha).ToList(),
+            Files = files
+        };
+    }
+
+    // 패치 텍스트를 줄 단위로 분해해 접두사로 종류를 분류.
+    // "+++"/"---"는 파일 경로 헤더라서 "+"/"-"보다 먼저 검사해야 추가/삭제로 오분류되지 않음
+    private static List<DiffLine> ParseDiffLines(string patch)
+    {
+        var lines = new List<DiffLine>();
+        foreach (var line in patch.Split('\n'))
+        {
+            var text = line.TrimEnd('\r');
+            var kind =
+                text.StartsWith("+++") || text.StartsWith("---") || text.StartsWith("@@")
+                    || text.StartsWith("diff ") || text.StartsWith("index ") ? DiffLineKind.Header
+                : text.StartsWith('+') ? DiffLineKind.Added
+                : text.StartsWith('-') ? DiffLineKind.Removed
+                : DiffLineKind.Context;
+            lines.Add(new DiffLine(text, kind));
+        }
+        return lines;
+    }
+
     private Dictionary<string, List<string>> BuildRefLabels()
     {
         var map = new Dictionary<string, List<string>>();
