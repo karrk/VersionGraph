@@ -99,6 +99,17 @@ public sealed class GraphCanvasControl : FrameworkElement
     // 호버 하이라이트용 반투명 브러시 (팔레트 0번 초록 톤과 맞춤)
     private static readonly Brush HoverBrush = FreezeBrush(new SolidColorBrush(Color.FromArgb(0x22, 0x39, 0xFF, 0x14)));
 
+    // 브랜치 라벨 박스: CRT 톤에 맞춘 녹색기 도는 회색조
+    private static readonly Brush LabelBgBrush = FreezeBrush(new SolidColorBrush(Color.FromRgb(0x1C, 0x24, 0x1C)));
+    private static readonly Brush LabelTextBrush = FreezeBrush(new SolidColorBrush(Color.FromRgb(0xB4, 0xC0, 0xB4)));
+    private static readonly Pen LabelBorderPen = FreezePen(new Pen(new SolidColorBrush(Color.FromRgb(0x52, 0x5E, 0x52)), 1));
+
+    private static Pen FreezePen(Pen pen)
+    {
+        pen.Freeze();
+        return pen;
+    }
+
     protected override void OnRender(DrawingContext dc)
     {
         var graph = Graph;
@@ -179,7 +190,9 @@ public sealed class GraphCanvasControl : FrameworkElement
     private void DrawRowText(DrawingContext dc, CommitNode commit, double x, double centerY)
     {
         var brush = BrushFor(commit.ColorIndex);
-        var contentText = MakeFormattedText(commit.Message, brush);
+        // '/'는 포맷 문자열에서 문화권별 날짜 구분자로 치환되므로 따옴표로 감싸 리터럴 고정
+        var timestamp = commit.When.ToString("[yy-MM-dd '/' HH:mm:ss]");
+        var contentText = MakeFormattedText($"{timestamp} {commit.Message}", brush);
 
         if (commit.RefLabels.Count == 0)
         {
@@ -187,15 +200,31 @@ public sealed class GraphCanvasControl : FrameworkElement
             return;
         }
 
-        var branchText = MakeFormattedText($"[{string.Join(", ", commit.RefLabels)}]", brush);
-        var top = centerY - (branchText.Height + contentText.Height) / 2;
-        dc.DrawText(branchText, new Point(x, top));
-        dc.DrawText(contentText, new Point(x, top + branchText.Height));
+        var top = centerY - (BranchLineHeight + contentText.Height) / 2;
+        DrawRefLabelBoxes(dc, commit.RefLabels, x, top);
+        dc.DrawText(contentText, new Point(x, top + BranchLineHeight));
     }
 
-    private FormattedText MakeFormattedText(string text, Brush brush) => new(
+    // 브랜치/태그 라벨을 각각 라운딩 박스에 담아 가로로 나열
+    private void DrawRefLabelBoxes(DrawingContext dc, IReadOnlyList<string> labels, double x, double top)
+    {
+        const double padX = 6;
+        const double gap = 6;
+        var boxHeight = BranchLineHeight - 4;
+
+        foreach (var label in labels)
+        {
+            var text = MakeFormattedText(label, LabelTextBrush, 12);
+            var rect = new Rect(x, top + (BranchLineHeight - boxHeight) / 2, text.Width + padX * 2, boxHeight);
+            dc.DrawRoundedRectangle(LabelBgBrush, LabelBorderPen, rect, 4, 4);
+            dc.DrawText(text, new Point(rect.X + padX, rect.Y + (boxHeight - text.Height) / 2));
+            x += rect.Width + gap;
+        }
+    }
+
+    private FormattedText MakeFormattedText(string text, Brush brush, double fontSize = 16) => new(
         text, System.Globalization.CultureInfo.CurrentUICulture, FlowDirection.LeftToRight,
-        _typeface, 16, brush, VisualTreeHelper.GetDpi(this).PixelsPerDip)
+        _typeface, fontSize, brush, VisualTreeHelper.GetDpi(this).PixelsPerDip)
     {
         MaxTextWidth = TextWidth,
         MaxLineCount = 1,
