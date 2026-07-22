@@ -80,7 +80,17 @@ public sealed partial class GraphViewModel : ObservableObject, IDisposable
     }
 
     [RelayCommand]
-    private void SelectCommit(CommitNode commit) => LoadDetailAsync(commit.Sha);
+    private void SelectCommit(CommitNode commit)
+    {
+        // 같은 커밋 재클릭 = 상세 패널 토글 닫기
+        if (SelectedDetail?.FullSha == commit.Sha)
+        {
+            _pendingDetailSha = null;
+            SelectedDetail = null;
+            return;
+        }
+        LoadDetailAsync(commit.Sha);
+    }
 
     // diff 계산이 무거울 수 있어 백그라운드에서 만들고 결과만 UI 스레드로 반영.
     // 연타 클릭 시 늦게 끝난 이전 요청이 최신 선택을 덮어쓰지 않도록 sha를 대조한다

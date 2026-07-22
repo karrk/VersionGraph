@@ -2,6 +2,7 @@ using System.Linq;
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Threading;
 using VersionGraph.Models;
 using Size = System.Windows.Size;
 using Color = System.Windows.Media.Color;
@@ -44,7 +45,18 @@ public sealed class GraphCanvasControl : FrameworkElement
 
     public static readonly DependencyProperty GraphProperty = DependencyProperty.Register(
         nameof(Graph), typeof(GraphModel), typeof(GraphCanvasControl),
-        new FrameworkPropertyMetadata(GraphModel.Empty, FrameworkPropertyMetadataOptions.AffectsRender | FrameworkPropertyMetadataOptions.AffectsMeasure));
+        new FrameworkPropertyMetadata(GraphModel.Empty,
+            FrameworkPropertyMetadataOptions.AffectsRender | FrameworkPropertyMetadataOptions.AffectsMeasure,
+            OnGraphChanged));
+
+    private static void OnGraphChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
+    {
+        // 그래프가 교체되면 인덱스 기반 호버 상태가 전부 무효. 선택 펄스는 새 그래프 기준으로 재계산
+        var control = (GraphCanvasControl)d;
+        control.SetNodeHoverIndex(-1);
+        control.SetHoverIndex(-1);
+        control.UpdateSelectedPulse();
+    }
 
     public GraphModel Graph
     {
@@ -68,7 +80,8 @@ public sealed class GraphCanvasControl : FrameworkElement
 
     public static readonly DependencyProperty SelectedCommitShaProperty = DependencyProperty.Register(
         nameof(SelectedCommitSha), typeof(string), typeof(GraphCanvasControl),
-        new FrameworkPropertyMetadata(null, FrameworkPropertyMetadataOptions.AffectsRender));
+        new FrameworkPropertyMetadata(null, FrameworkPropertyMetadataOptions.AffectsRender,
+            (d, _) => ((GraphCanvasControl)d).UpdateSelectedPulse()));
 
     /// <summary>상세 패널에 표시 중인 커밋 SHA. 해당 행에 선택 하이라이트를 그린다.</summary>
     public string? SelectedCommitSha
@@ -86,6 +99,60 @@ public sealed class GraphCanvasControl : FrameworkElement
 
     // 호버 중인 행 인덱스. -1 = 없음. OnRender에서 하이라이트를 그리는 데 사용
     private int _hoverIndex = -1;
+
+    // 노드(동그라미) 호버 상태: 조상 줄기 펄스 애니메이션의 시작점
+    private int _nodeHoverIndex = -1;
+    private HashSet<string>? _ancestorShas;
+
+    // 선택된 커밋(상세 패널 표시 중)도 호버와 동일한 조상 펄스를 유지
+    private int _selectedPulseIndex = -1;
+    private HashSet<string>? _selectedPulseShas;
+
+    private DateTime _pulseStart;
+    private readonly DispatcherTimer _pulseTimer = new() { Interval = TimeSpan.FromMilliseconds(33) };
+
+    public GraphCanvasControl()
+    {
+        _pulseTimer.Tick += (_, _) => InvalidateVisual();
+    }
+
+    // 호버/선택 어느 쪽이든 활성 상태면 타이머 유지, 둘 다 없으면 정지
+    private void UpdatePulseTimer()
+    {
+        var shouldRun = _ancestorShas is not null || _selectedPulseShas is not null;
+        if (shouldRun && !_pulseTimer.IsEnabled)
+        {
+            _pulseStart = DateTime.UtcNow;
+            _pulseTimer.Start();
+        }
+        else if (!shouldRun && _pulseTimer.IsEnabled)
+        {
+            _pulseTimer.Stop();
+        }
+    }
+
+    private void UpdateSelectedPulse()
+    {
+        _selectedPulseIndex = -1;
+        _selectedPulseShas = null;
+
+        var sha = SelectedCommitSha;
+        if (sha is not null)
+        {
+            var commits = Graph.Commits;
+            for (var i = 0; i < commits.Count; i++)
+            {
+                if (commits[i].Sha != sha)
+                    continue;
+                _selectedPulseIndex = i;
+                _selectedPulseShas = CollectAncestorShas(i);
+                break;
+            }
+        }
+
+        UpdatePulseTimer();
+        InvalidateVisual();
+    }
 
     private static void OnIsInteractiveChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
     {
@@ -113,6 +180,11 @@ public sealed class GraphCanvasControl : FrameworkElement
     // 선택된 행: 호버보다 진한 배경 + 네온 그린 테두리로 "지금 보고 있는 커밋"을 명확히 구분
     private static readonly Brush SelectedRowBrush = FreezeBrush(new SolidColorBrush(Color.FromArgb(0x3A, 0x39, 0xFF, 0x14)));
     private static readonly Pen SelectedRowPen = FreezePen(new Pen(new SolidColorBrush(Color.FromArgb(0xAA, 0x39, 0xFF, 0x14)), 1));
+
+    // 조상 줄기 오버레이: 은은한 상시 발광 + 흘러가는 펄스 (CRT 신호 흐름 톤의 화이트그린)
+    private static readonly Pen AncestorGlowPen = FreezePen(new Pen(new SolidColorBrush(Color.FromArgb(0x82, 0xE8, 0xFF, 0xEA)), 4));
+    private static readonly Brush PulseBrush = FreezeBrush(new SolidColorBrush(Color.FromArgb(0xFF, 0xF2, 0xFF, 0xF4)));
+    private static readonly Brush NodeHaloBrush = FreezeBrush(new SolidColorBrush(Color.FromArgb(0x8C, 0xE8, 0xFF, 0xEA)));
 
     // 브랜치 라벨 박스: CRT 톤에 맞춘 녹색기 도는 회색조
     private static readonly Brush LabelBgBrush = FreezeBrush(new SolidColorBrush(Color.FromRgb(0x1C, 0x24, 0x1C)));
@@ -174,31 +246,13 @@ public sealed class GraphCanvasControl : FrameworkElement
                 if (!indexBySha.TryGetValue(edge.ParentSha, out var parentIndex))
                     continue; // 히스토리 경계(shallow) 밖의 부모
 
-                var toY = rowCenterY[parentIndex];
-                var fromX = LaneCenterX(edge.FromLane);
-                var toX = LaneCenterX(edge.ToLane);
-                var pen = new Pen(BrushFor(edge.ColorIndex), 2);
-
-                if (edge.FromLane == edge.ToLane)
-                {
-                    dc.DrawLine(pen, new Point(fromX, fromY), new Point(toX, toY));
-                }
-                else
-                {
-                    // 레인 이동은 직선 대신 베지어 곡선으로 부드럽게 표현
-                    var geometry = new StreamGeometry();
-                    using (var ctx = geometry.Open())
-                    {
-                        ctx.BeginFigure(new Point(fromX, fromY), false, false);
-                        var midY = (fromY + toY) / 2;
-                        ctx.BezierTo(
-                            new Point(fromX, midY), new Point(toX, midY), new Point(toX, toY),
-                            true, false);
-                    }
-                    dc.DrawGeometry(null, pen, geometry);
-                }
+                var geometry = BuildEdgePath(
+                    LaneCenterX(edge.FromLane), fromY, LaneCenterX(edge.ToLane), rowCenterY[parentIndex]);
+                dc.DrawGeometry(null, new Pen(BrushFor(edge.ColorIndex), 2), geometry);
             }
         }
+
+        DrawAncestorPulse(dc, graph, indexBySha, rowCenterY);
 
         for (var i = 0; i < graph.Commits.Count; i++)
         {
@@ -211,6 +265,75 @@ public sealed class GraphCanvasControl : FrameworkElement
 
             var textX = LeftPadding + graph.LaneCount * LaneWidth + TextGap;
             DrawRowText(dc, commit, textX, y);
+        }
+
+        // 호버/선택 노드 글로우: 노드 위에 얹어 펄스의 시작점을 표시
+        DrawNodeHalo(dc, graph, rowCenterY, _nodeHoverIndex);
+        if (_selectedPulseIndex != _nodeHoverIndex)
+            DrawNodeHalo(dc, graph, rowCenterY, _selectedPulseIndex);
+    }
+
+    private static void DrawNodeHalo(DrawingContext dc, GraphModel graph, double[] rowCenterY, int index)
+    {
+        if (index < 0 || index >= graph.Commits.Count)
+            return;
+        var commit = graph.Commits[index];
+        var center = new Point(LaneCenterX(commit.Lane), rowCenterY[index]);
+        dc.DrawEllipse(NodeHaloBrush, null, center, NodeRadius + 5, NodeRadius + 5);
+    }
+
+    // 같은 레인이면 직선, 레인 이동이면 베지어 곡선. 항상 자식(위)에서 시작해
+    // 부모(아래)로 끝나므로 대시 오프셋 애니메이션의 흐름 방향이 자연히 아래를 향한다
+    private static Geometry BuildEdgePath(double fromX, double fromY, double toX, double toY)
+    {
+        if (fromX == toX)
+            return new LineGeometry(new Point(fromX, fromY), new Point(toX, toY));
+
+        var geometry = new StreamGeometry();
+        using (var ctx = geometry.Open())
+        {
+            ctx.BeginFigure(new Point(fromX, fromY), false, false);
+            var midY = (fromY + toY) / 2;
+            ctx.BezierTo(
+                new Point(fromX, midY), new Point(toX, midY), new Point(toX, toY),
+                true, false);
+        }
+        return geometry;
+    }
+
+    // 호버/선택 노드의 모든 조상 엣지 위에 발광 오버레이 + 아래로 흘러가는 대시 펄스를 겹쳐 그린다
+    private void DrawAncestorPulse(DrawingContext dc, GraphModel graph, Dictionary<string, int> indexBySha, double[] rowCenterY)
+    {
+        if (_ancestorShas is null && _selectedPulseShas is null)
+            return;
+
+        // 대시 오프셋을 시간에 따라 줄이면 대시 조각이 경로 진행 방향(아래)으로 이동해 보인다
+        var elapsed = (DateTime.UtcNow - _pulseStart).TotalSeconds;
+        var pulsePen = new Pen(PulseBrush, 3)
+        {
+            DashStyle = new DashStyle([2, 4], -elapsed * 10 % 6),
+            DashCap = PenLineCap.Round
+        };
+
+        for (var i = 0; i < graph.Commits.Count; i++)
+        {
+            var commit = graph.Commits[i];
+            // 호버/선택 어느 쪽 조상 집합에도 속하지 않으면 스킵 (겹치는 엣지는 한 번만 그림)
+            var inHover = _ancestorShas?.Contains(commit.Sha) == true;
+            var inSelected = _selectedPulseShas?.Contains(commit.Sha) == true;
+            if (!inHover && !inSelected)
+                continue;
+
+            foreach (var edge in commit.Edges)
+            {
+                if (!indexBySha.TryGetValue(edge.ParentSha, out var parentIndex))
+                    continue;
+
+                var geometry = BuildEdgePath(
+                    LaneCenterX(edge.FromLane), rowCenterY[i], LaneCenterX(edge.ToLane), rowCenterY[parentIndex]);
+                dc.DrawGeometry(null, AncestorGlowPen, geometry);
+                dc.DrawGeometry(null, pulsePen, geometry);
+            }
         }
     }
 
@@ -284,19 +407,73 @@ public sealed class GraphCanvasControl : FrameworkElement
     protected override void OnMouseMove(MouseEventArgs e)
     {
         base.OnMouseMove(e);
+        var pos = e.GetPosition(this);
+        var rowIndex = RowIndexAt(pos.Y);
+
+        // 노드(동그라미) 히트테스트는 화면 모드와 무관하게 항상 동작
+        SetNodeHoverIndex(NodeIndexAt(pos, rowIndex));
+
         if (!IsInteractive)
             return;
 
-        var index = RowIndexAt(e.GetPosition(this).Y);
-        SetHoverIndex(index);
-        Cursor = index >= 0 ? Cursors.Hand : null;
+        SetHoverIndex(rowIndex);
+        Cursor = rowIndex >= 0 ? Cursors.Hand : null;
     }
 
     protected override void OnMouseLeave(MouseEventArgs e)
     {
         base.OnMouseLeave(e);
+        SetNodeHoverIndex(-1);
         SetHoverIndex(-1);
         Cursor = null;
+    }
+
+    // 커서가 해당 행 커밋의 노드 원 위에 있는지 판정 (반경 + 약간의 여유)
+    private int NodeIndexAt(Point pos, int rowIndex)
+    {
+        if (rowIndex < 0)
+            return -1;
+
+        var commit = Graph.Commits[rowIndex];
+        var cx = LaneCenterX(commit.Lane);
+        var cy = RowTopY(Graph, rowIndex) + RowHeightFor(commit) / 2;
+        var dx = pos.X - cx;
+        var dy = pos.Y - cy;
+        const double hitRadius = NodeRadius + 4;
+        return dx * dx + dy * dy <= hitRadius * hitRadius ? rowIndex : -1;
+    }
+
+    private void SetNodeHoverIndex(int index)
+    {
+        if (_nodeHoverIndex == index)
+            return;
+        _nodeHoverIndex = index;
+
+        _ancestorShas = index >= 0 ? CollectAncestorShas(index) : null;
+        UpdatePulseTimer();
+        InvalidateVisual();
+    }
+
+    // 호버 커밋에서 부모를 따라 도달 가능한 모든 조상(머지의 양쪽 갈래 포함)을 수집
+    private HashSet<string> CollectAncestorShas(int startIndex)
+    {
+        var graph = Graph;
+        var bySha = new Dictionary<string, CommitNode>(graph.Commits.Count);
+        foreach (var commit in graph.Commits)
+            bySha[commit.Sha] = commit;
+
+        var visited = new HashSet<string>();
+        var stack = new Stack<string>();
+        stack.Push(graph.Commits[startIndex].Sha);
+        while (stack.Count > 0)
+        {
+            var sha = stack.Pop();
+            if (!visited.Add(sha) || !bySha.TryGetValue(sha, out var node))
+                continue;
+            foreach (var parentSha in node.ParentShas)
+                stack.Push(parentSha);
+        }
+        return visited;
     }
 
     protected override void OnMouseLeftButtonDown(MouseButtonEventArgs e)
