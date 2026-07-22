@@ -28,6 +28,10 @@ public partial class MainWindow : Window
     private double _screenHeight;
     private Forms.NotifyIcon? _notifyIcon;
     private GraphViewModel? _graphViewModel;
+    private bool _isFullScreen;
+    private WindowStyle _windowStyleBeforeFullScreen;
+    private ResizeMode _resizeModeBeforeFullScreen;
+    private WindowState _windowStateBeforeFullScreen;
 
     public MainWindow()
     {
@@ -241,7 +245,31 @@ public partial class MainWindow : Window
         _graphViewModel?.Dispose();
         _graphViewModel = new GraphViewModel(owner, name, localPath, token);
         _graphViewModel.StopTraceRequested += async (_, _) => await OnStopTraceAsync(token);
+        _graphViewModel.FullScreenToggleRequested += (_, _) => ToggleFullScreen();
         ShowContent(new GraphView { DataContext = _graphViewModel });
+    }
+
+    // 창 테두리/타이틀바까지 없앤 전체화면을 토글. 이전 창 상태를 기억해뒀다가 그대로 복원한다.
+    private void ToggleFullScreen()
+    {
+        if (_isFullScreen)
+        {
+            WindowStyle = _windowStyleBeforeFullScreen;
+            ResizeMode = _resizeModeBeforeFullScreen;
+            WindowState = _windowStateBeforeFullScreen;
+        }
+        else
+        {
+            _windowStyleBeforeFullScreen = WindowStyle;
+            _resizeModeBeforeFullScreen = ResizeMode;
+            _windowStateBeforeFullScreen = WindowState;
+
+            WindowStyle = WindowStyle.None;
+            ResizeMode = ResizeMode.NoResize;
+            WindowState = WindowState.Maximized;
+        }
+
+        _isFullScreen = !_isFullScreen;
     }
 
     private async Task OnStopTraceAsync(string token)
