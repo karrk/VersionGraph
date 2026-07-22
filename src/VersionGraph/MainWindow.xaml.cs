@@ -23,7 +23,9 @@ public partial class MainWindow : Window
 {
     private readonly GitHubAuthService _authService = new();
     private readonly DispatcherTimer _glitchTimer = new();
+    private readonly DispatcherTimer _rollingBarTimer = new();
     private readonly Random _glitchRandom = new();
+    private double _screenHeight;
     private Forms.NotifyIcon? _notifyIcon;
     private GraphViewModel? _graphViewModel;
 
@@ -34,7 +36,11 @@ public partial class MainWindow : Window
         SourceInitialized += (_, _) => ApplyNativeChromeTweaks();
         Loaded += async (_, _) => await StartAsync();
         Loaded += (_, _) => StartGlitchEffect();
+        Loaded += (_, _) => StartRollingBarEffect();
     }
+
+    // 롤링 바 한 번(화면 밖 위 → 화면 밖 아래)이 지나가는 데 걸리는 시간
+    private static readonly TimeSpan RollingBarPassDuration = TimeSpan.FromSeconds(7);
 
     [DllImport("dwmapi.dll", PreserveSig = true)]
     private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attribute, ref int value, int size);
@@ -95,6 +101,47 @@ public partial class MainWindow : Window
     private void ScreenArea_SizeChanged(object sender, SizeChangedEventArgs e)
     {
         ScreenArea.Clip = new RectangleGeometry(new Rect(e.NewSize), 14, 14);
+        // 이동 거리(-바 높이 ~ 화면 높이)가 창 크기에 종속적이라 다음 재생 때 쓸 값만 갱신해둔다
+        _screenHeight = e.NewSize.Height;
+    }
+
+    // 롤링 바: 실제 브라운관 동기 이탈처럼 항상 도는 게 아니라, 아주 가끔 한 번씩만
+    // 지나가야 자연스럽다. 글리치와 같은 방식(무작위 간격 재예약)으로 등장 빈도를 낮춘다
+    private void StartRollingBarEffect()
+    {
+        // 기본 Y=0(화면 최상단)에 그대로 걸쳐 있으면 첫 재생 전까지 고정된 채 보여버리므로,
+        // 애니메이션을 걸기 전에 화면 밖 대기 위치로 미리 치워둔다
+        RollingBarTransform.Y = -RollingBar.Height;
+
+        _rollingBarTimer.Tick += (_, _) =>
+        {
+            PlayRollingBarPass();
+            _rollingBarTimer.Interval = TimeSpan.FromSeconds(_glitchRandom.Next(3, 21));
+        };
+        _rollingBarTimer.Interval = TimeSpan.FromSeconds(_glitchRandom.Next(3, 21));
+        _rollingBarTimer.Start();
+    }
+
+    private void PlayRollingBarPass()
+    {
+        if (_screenHeight <= 0)
+            return;
+
+        var roll = new DoubleAnimation(-RollingBar.Height, _screenHeight, RollingBarPassDuration);
+        RollingBarTransform.BeginAnimation(TranslateTransform.YProperty, roll);
+
+        // 실제 아날로그 롤바는 밝기가 일정하지 않고 지글거린다. 불규칙한 간격마다
+        // 불규칙한 밝기로 뚝뚝 끊어 바뀌는 Discrete 키프레임을 랜덤 생성해 그 노이즈를 흉내내되,
+        // 지나가는 동안(RollingBarPassDuration)만 유지하고 끝나면 다시 숨는다
+        var flicker = new DoubleAnimationUsingKeyFrames { FillBehavior = FillBehavior.Stop };
+        var t = TimeSpan.Zero;
+        while (t < RollingBarPassDuration)
+        {
+            t += TimeSpan.FromMilliseconds(_glitchRandom.Next(40, 150));
+            var brightness = 0.4 + _glitchRandom.NextDouble() * 0.6;
+            flicker.KeyFrames.Add(new DiscreteDoubleKeyFrame(brightness, KeyTime.FromTimeSpan(t)));
+        }
+        RollingBar.BeginAnimation(OpacityProperty, flicker);
     }
 
     private void RestoreWindow()
@@ -115,6 +162,7 @@ public partial class MainWindow : Window
     {
         // 창 닫기(X) 또는 트레이 "종료" = 추적 중지 지점
         _glitchTimer.Stop();
+        _rollingBarTimer.Stop();
         _graphViewModel?.Dispose();
         _notifyIcon?.Dispose();
     }

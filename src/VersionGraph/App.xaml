@@ -59,6 +59,26 @@
             <GradientStop Color="#00FFFFFF" Offset="1.0"/>
         </LinearGradientBrush>
 
+        <!-- 롤링 바: 수직 동기가 어긋난 옛날 브라운관의 롤 현상. 실제 아날로그 롤바는
+             대칭으로 곱게 번지지 않고, 밝은 동기 이탈선(코어)이 한쪽으로 치우친 채
+             앞뒤로 지글거리는 얼룩을 끌고 다닌다. 색도 UI 강조색(초록)이 아니라
+             거의 흰색에 가까운 밝기 이상 신호로 표현해야 "화면 색"이 아니라
+             "신호 노이즈"처럼 보인다 -->
+        <LinearGradientBrush x:Key="RollingBarBrush" StartPoint="0,0" EndPoint="0,1">
+            <GradientStop Color="#00E8FFEA" Offset="0.00"/>
+            <GradientStop Color="#02E8FFEA" Offset="0.09"/>
+            <GradientStop Color="#01E8FFEA" Offset="0.15"/>
+            <GradientStop Color="#03E8FFEA" Offset="0.22"/>
+            <GradientStop Color="#01E8FFEA" Offset="0.30"/>
+            <GradientStop Color="#0DFFFFFF" Offset="0.36"/>
+            <GradientStop Color="#11FFFFFF" Offset="0.40"/>
+            <GradientStop Color="#05E8FFEA" Offset="0.47"/>
+            <GradientStop Color="#02E8FFEA" Offset="0.58"/>
+            <GradientStop Color="#01E8FFEA" Offset="0.72"/>
+            <GradientStop Color="#00E8FFEA" Offset="0.88"/>
+            <GradientStop Color="#00E8FFEA" Offset="1.00"/>
+        </LinearGradientBrush>
+
         <!-- ===== 전역 스타일 ===== -->
         <Style TargetType="Window">
             <Setter Property="Background" Value="{StaticResource BgBrush}"/>
