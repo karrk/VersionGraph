@@ -37,6 +37,9 @@ public sealed class GraphCanvasControl : FrameworkElement
     // Palette와 1:1 대응하는 고정 브러시. 노드/엣지/텍스트가 전부 이 브러시를 공유해 브랜치별 색이 통일된다.
     private static readonly Brush[] PaletteBrushes = Palette.Select(c => FreezeBrush(new SolidColorBrush(c))).ToArray();
 
+    // 엣지마다 매 렌더 new Pen을 만들지 않도록 색상별로 미리 만들어 공유
+    private static readonly Pen[] EdgePens = PaletteBrushes.Select(b => FreezePen(new Pen(b, 2))).ToArray();
+
     private static Brush FreezeBrush(Brush brush)
     {
         brush.Freeze();
@@ -51,11 +54,30 @@ public sealed class GraphCanvasControl : FrameworkElement
 
     private static void OnGraphChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
     {
-        // 그래프가 교체되면 인덱스 기반 호버 상태가 전부 무효. 선택 펄스는 새 그래프 기준으로 재계산
+        // 그래프가 교체되면 캐시·인덱스 기반 호버 상태가 전부 무효. 선택 펄스는 새 그래프 기준으로 재계산
         var control = (GraphCanvasControl)d;
+        control.RebuildGraphCache();
         control.SetNodeHoverIndex(-1);
         control.SetHoverIndex(-1);
         control.UpdateSelectedPulse();
+    }
+
+    // 매 렌더마다 재계산하면 GC 압박이 커서, 그래프가 바뀔 때 한 번만 계산해 보관
+    private double[] _rowCenterY = [];
+    private Dictionary<string, int> _indexBySha = [];
+    // FormattedText 생성(텍스트 셰이핑)이 비싸므로 커밋/라벨 단위로 캐싱
+    private readonly Dictionary<string, FormattedText> _contentTextCache = [];
+    private readonly Dictionary<string, FormattedText> _labelTextCache = [];
+
+    private void RebuildGraphCache()
+    {
+        var graph = Graph;
+        _rowCenterY = ComputeRowCenters(graph);
+        _indexBySha = new Dictionary<string, int>(graph.Commits.Count);
+        for (var i = 0; i < graph.Commits.Count; i++)
+            _indexBySha[graph.Commits[i].Sha] = i;
+        _contentTextCache.Clear();
+        _labelTextCache.Clear();
     }
 
     public GraphModel Graph
@@ -111,10 +133,18 @@ public sealed class GraphCanvasControl : FrameworkElement
     private DateTime _pulseStart;
     private readonly DispatcherTimer _pulseTimer = new() { Interval = TimeSpan.FromMilliseconds(33) };
 
+    // 펄스 애니메이션 전용 오버레이 레이어. 타이머 틱마다 이 레이어만 다시 그리므로
+    // 본체(텍스트/노드/엣지)의 비싼 재렌더링 없이 저사양 PC에서도 가볍게 돈다
+    private readonly DrawingVisual _pulseOverlay = new();
+
     public GraphCanvasControl()
     {
-        _pulseTimer.Tick += (_, _) => InvalidateVisual();
+        AddVisualChild(_pulseOverlay);
+        _pulseTimer.Tick += (_, _) => RenderPulseOverlay();
     }
+
+    protected override int VisualChildrenCount => 1;
+    protected override Visual GetVisualChild(int index) => _pulseOverlay;
 
     // 호버/선택 어느 쪽이든 활성 상태면 타이머 유지, 둘 다 없으면 정지
     private void UpdatePulseTimer()
@@ -151,7 +181,7 @@ public sealed class GraphCanvasControl : FrameworkElement
         }
 
         UpdatePulseTimer();
-        InvalidateVisual();
+        RenderPulseOverlay();
     }
 
     private static void OnIsInteractiveChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
@@ -227,38 +257,28 @@ public sealed class GraphCanvasControl : FrameworkElement
             }
         }
 
-        var indexBySha = new Dictionary<string, int>(graph.Commits.Count);
-        for (var i = 0; i < graph.Commits.Count; i++)
-            indexBySha[graph.Commits[i].Sha] = i;
-
-        // 브랜치가 있는 커밋은 2줄이라 행 높이가 다르므로, 고정 간격 대신
-        // 커밋마다 누적한 실제 중심 Y좌표를 미리 계산해 노드/엣지에 그대로 쓴다
-        var rowCenterY = ComputeRowCenters(graph);
-
         // 먼저 엣지(선)를 전부 그리고 그 위에 노드를 그려야 선이 노드에 가려지지 않는다
         for (var i = 0; i < graph.Commits.Count; i++)
         {
             var commit = graph.Commits[i];
-            var fromY = rowCenterY[i];
+            var fromY = _rowCenterY[i];
 
             foreach (var edge in commit.Edges)
             {
-                if (!indexBySha.TryGetValue(edge.ParentSha, out var parentIndex))
+                if (!_indexBySha.TryGetValue(edge.ParentSha, out var parentIndex))
                     continue; // 히스토리 경계(shallow) 밖의 부모
 
                 var geometry = BuildEdgePath(
-                    LaneCenterX(edge.FromLane), fromY, LaneCenterX(edge.ToLane), rowCenterY[parentIndex]);
-                dc.DrawGeometry(null, new Pen(BrushFor(edge.ColorIndex), 2), geometry);
+                    LaneCenterX(edge.FromLane), fromY, LaneCenterX(edge.ToLane), _rowCenterY[parentIndex]);
+                dc.DrawGeometry(null, EdgePens[edge.ColorIndex % EdgePens.Length], geometry);
             }
         }
-
-        DrawAncestorPulse(dc, graph, indexBySha, rowCenterY);
 
         for (var i = 0; i < graph.Commits.Count; i++)
         {
             var commit = graph.Commits[i];
             var x = LaneCenterX(commit.Lane);
-            var y = rowCenterY[i];
+            var y = _rowCenterY[i];
             var brush = BrushFor(commit.ColorIndex);
 
             dc.DrawEllipse(brush, null, new Point(x, y), NodeRadius, NodeRadius);
@@ -266,19 +286,14 @@ public sealed class GraphCanvasControl : FrameworkElement
             var textX = LeftPadding + graph.LaneCount * LaneWidth + TextGap;
             DrawRowText(dc, commit, textX, y);
         }
-
-        // 호버/선택 노드 글로우: 노드 위에 얹어 펄스의 시작점을 표시
-        DrawNodeHalo(dc, graph, rowCenterY, _nodeHoverIndex);
-        if (_selectedPulseIndex != _nodeHoverIndex)
-            DrawNodeHalo(dc, graph, rowCenterY, _selectedPulseIndex);
     }
 
-    private static void DrawNodeHalo(DrawingContext dc, GraphModel graph, double[] rowCenterY, int index)
+    private void DrawNodeHalo(DrawingContext dc, GraphModel graph, int index)
     {
         if (index < 0 || index >= graph.Commits.Count)
             return;
         var commit = graph.Commits[index];
-        var center = new Point(LaneCenterX(commit.Lane), rowCenterY[index]);
+        var center = new Point(LaneCenterX(commit.Lane), _rowCenterY[index]);
         dc.DrawEllipse(NodeHaloBrush, null, center, NodeRadius + 5, NodeRadius + 5);
     }
 
@@ -301,11 +316,15 @@ public sealed class GraphCanvasControl : FrameworkElement
         return geometry;
     }
 
-    // 호버/선택 노드의 모든 조상 엣지 위에 발광 오버레이 + 아래로 흘러가는 대시 펄스를 겹쳐 그린다
-    private void DrawAncestorPulse(DrawingContext dc, GraphModel graph, Dictionary<string, int> indexBySha, double[] rowCenterY)
+    // 호버/선택 노드의 모든 조상 엣지 위에 발광 오버레이 + 아래로 흘러가는 대시 펄스를 오버레이 레이어에 그린다.
+    // 본체 OnRender와 분리되어 있어 타이머 틱마다 이 메서드만 실행된다
+    private void RenderPulseOverlay()
     {
-        if (_ancestorShas is null && _selectedPulseShas is null)
-            return;
+        using var dc = _pulseOverlay.RenderOpen();
+
+        var graph = Graph;
+        if (graph.Commits.Count == 0 || (_ancestorShas is null && _selectedPulseShas is null))
+            return; // 비우기만 하고 종료 (오버레이 클리어)
 
         // 대시 오프셋을 시간에 따라 줄이면 대시 조각이 경로 진행 방향(아래)으로 이동해 보인다
         var elapsed = (DateTime.UtcNow - _pulseStart).TotalSeconds;
@@ -326,25 +345,27 @@ public sealed class GraphCanvasControl : FrameworkElement
 
             foreach (var edge in commit.Edges)
             {
-                if (!indexBySha.TryGetValue(edge.ParentSha, out var parentIndex))
+                if (!_indexBySha.TryGetValue(edge.ParentSha, out var parentIndex))
                     continue;
 
                 var geometry = BuildEdgePath(
-                    LaneCenterX(edge.FromLane), rowCenterY[i], LaneCenterX(edge.ToLane), rowCenterY[parentIndex]);
+                    LaneCenterX(edge.FromLane), _rowCenterY[i], LaneCenterX(edge.ToLane), _rowCenterY[parentIndex]);
                 dc.DrawGeometry(null, AncestorGlowPen, geometry);
                 dc.DrawGeometry(null, pulsePen, geometry);
             }
         }
+
+        // 호버/선택 노드 글로우: 펄스의 시작점 표시
+        DrawNodeHalo(dc, graph, _nodeHoverIndex);
+        if (_selectedPulseIndex != _nodeHoverIndex)
+            DrawNodeHalo(dc, graph, _selectedPulseIndex);
     }
 
     // 브랜치가 달린 커밋은 1번째 줄에 브랜치명, 2번째 줄에 커밋 내용을 나눠 그린다.
     // 브랜치가 없으면 굳이 빈 줄을 만들지 않고 커밋 내용만 한 줄로 그린다.
     private void DrawRowText(DrawingContext dc, CommitNode commit, double x, double centerY)
     {
-        var brush = BrushFor(commit.ColorIndex);
-        // '/'는 포맷 문자열에서 문화권별 날짜 구분자로 치환되므로 따옴표로 감싸 리터럴 고정
-        var timestamp = commit.When.ToString("[yy-MM-dd '/' HH:mm:ss]");
-        var contentText = MakeFormattedText($"{timestamp} {commit.Message}", brush);
+        var contentText = ContentTextFor(commit);
 
         if (commit.RefLabels.Count == 0)
         {
@@ -366,12 +387,36 @@ public sealed class GraphCanvasControl : FrameworkElement
 
         foreach (var label in labels)
         {
-            var text = MakeFormattedText(label, LabelTextBrush, 12);
+            var text = LabelTextFor(label);
             var rect = new Rect(x, top + (BranchLineHeight - boxHeight) / 2, text.Width + padX * 2, boxHeight);
             dc.DrawRoundedRectangle(LabelBgBrush, LabelBorderPen, rect, 4, 4);
             dc.DrawText(text, new Point(rect.X + padX, rect.Y + (boxHeight - text.Height) / 2));
             x += rect.Width + gap;
         }
+    }
+
+    // 커밋 내용/라벨 텍스트는 그래프가 바뀌기 전까지 불변이므로 캐싱해 재사용.
+    // 텍스트 셰이핑 비용이 커서 행 호버 재렌더 등에서 큰 차이가 난다
+    private FormattedText ContentTextFor(CommitNode commit)
+    {
+        if (_contentTextCache.TryGetValue(commit.Sha, out var cached))
+            return cached;
+
+        // '/'는 포맷 문자열에서 문화권별 날짜 구분자로 치환되므로 따옴표로 감싸 리터럴 고정
+        var timestamp = commit.When.ToString("[yy-MM-dd '/' HH:mm:ss]");
+        var text = MakeFormattedText($"{timestamp} {commit.Message}", BrushFor(commit.ColorIndex));
+        _contentTextCache[commit.Sha] = text;
+        return text;
+    }
+
+    private FormattedText LabelTextFor(string label)
+    {
+        if (_labelTextCache.TryGetValue(label, out var cached))
+            return cached;
+
+        var text = MakeFormattedText(label, LabelTextBrush, 12);
+        _labelTextCache[label] = text;
+        return text;
     }
 
     private FormattedText MakeFormattedText(string text, Brush brush, double fontSize = 16) => new(
@@ -451,7 +496,7 @@ public sealed class GraphCanvasControl : FrameworkElement
 
         _ancestorShas = index >= 0 ? CollectAncestorShas(index) : null;
         UpdatePulseTimer();
-        InvalidateVisual();
+        RenderPulseOverlay();
     }
 
     // 호버 커밋에서 부모를 따라 도달 가능한 모든 조상(머지의 양쪽 갈래 포함)을 수집
